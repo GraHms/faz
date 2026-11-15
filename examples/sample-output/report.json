@@ -1,0 +1,238 @@
+{
+  "status": "ready",
+  "status_reasons": [
+    "repairs were applied but not re-reviewed visually; check the final screenshots"
+  ],
+  "profile": "quality",
+  "started_at": "2026-11-15T08:47:41.818145939+02:00",
+  "seconds": 17.38839953,
+  "total_cost_usd": 0.1814429,
+  "stages": [
+    {
+      "stage": "intake",
+      "model": "claude-haiku-5-5",
+      "effort": "medium",
+      "attempt": 1,
+      "input_tokens": 1034,
+      "output_tokens": 527,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.00036690000000000003,
+      "seconds": 0.01
+    },
+    {
+      "stage": "content",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "attempt": 1,
+      "input_tokens": 1503,
+      "output_tokens": 726,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.010266,
+      "seconds": 0.01
+    },
+    {
+      "stage": "plan",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "attempt": 1,
+      "input_tokens": 3349,
+      "output_tokens": 565,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.024696,
+      "seconds": 0.01
+    },
+    {
+      "stage": "critique",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "attempt": 1,
+      "input_tokens": 3751,
+      "output_tokens": 1328,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.041564000000000004,
+      "seconds": 0.01
+    },
+    {
+      "stage": "build",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "attempt": 1,
+      "input_tokens": 3686,
+      "output_tokens": 2288,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.030252,
+      "seconds": 0.01
+    },
+    {
+      "stage": "review",
+      "model": "claude-opus-5-5",
+      "effort": "medium",
+      "attempt": 1,
+      "input_tokens": 16107,
+      "output_tokens": 148,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.067388,
+      "seconds": 0.01
+    },
+    {
+      "stage": "repair",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "attempt": 1,
+      "input_tokens": 2850,
+      "output_tokens": 121,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.00691,
+      "seconds": 0.01
+    }
+  ],
+  "gaps": [
+    "Quanto custa a entrega em cada bairro?",
+    "Qual é o endereço do perfil no Instagram?"
+  ],
+  "assumptions": [
+    "Assumed: the WhatsApp link uses the number +258 84 000 0000 without spaces."
+  ],
+  "placeholders": [
+    {
+      "key": "entrega",
+      "description": "valor da entrega por bairro"
+    },
+    {
+      "key": "instagram",
+      "description": "endereço do perfil no Instagram"
+    }
+  ],
+  "plan_findings_draft": [
+    {
+      "check": "plan.type",
+      "severity": "info",
+      "message": "display and body use one family; make sure the weights and sizes do the work"
+    },
+    {
+      "check": "plan.contrast",
+      "severity": "blocker",
+      "where": "light",
+      "message": "muted (#A39B8B) on bg (#F4F0E8) is 2.43:1; needs 4.5:1"
+    },
+    {
+      "check": "plan.contrast",
+      "severity": "major",
+      "where": "light",
+      "message": "accent (#D4775A) on bg (#F4F0E8) is 2.81:1; needs 3.0:1"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "major",
+      "where": "type",
+      "message": "Inter is the generic safe face; choose one for this subject"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "major",
+      "where": "type",
+      "message": "Inter is the generic safe face; choose one for this subject"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "major",
+      "where": "light",
+      "message": "palette matches a generic default: warm cream background with terracotta accent"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "major",
+      "message": "the plan sizes something to the viewport height; size the hero to its content"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "major",
+      "message": "the plan sizes something to the viewport height; size the hero to its content"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "minor",
+      "message": "the plan mentions fade up entrances; keep at most one orchestrated moment"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "minor",
+      "message": "the plan ties motion to scrolling; content must be visible at rest"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "info",
+      "message": "the plan uses a gradient; make sure it comes from the subject, not decoration"
+    },
+    {
+      "check": "plan.defaults",
+      "severity": "minor",
+      "where": "layout",
+      "message": "everything centered is a common default; confirm the subject calls for it"
+    }
+  ],
+  "critique_changes": [
+    "Concept rebuilt around the batch label on each jar: Jar weights, harvest months and origin are the facts buyers ask about, and they already read like a printed label.",
+    "Bold move moved to a harvest calendar band: Twelve months with each honey's harvest marked is the one thing only this subject has.",
+    "Palette taken from wax paper, propolis and amber honey: Replaces the generic cream and terracotta; muted text now passes contrast.",
+    "Display face changed to Zilla Slab, body to Source Sans 3: A slab reads like stamped crate labels; Inter was a default.",
+    "Left aligned label column, hero sized to content, no motion: Centered 100vh and scroll fades were defaults and hid content at rest."
+  ],
+  "findings_before_repair": [
+    {
+      "check": "render.fonts",
+      "severity": "info",
+      "where": "desktop-1280-light: ",
+      "message": "failed to load \u003clink\u003e https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600\u0026family=Zilla+Slab:wght@600;700\u0026display=swap"
+    },
+    {
+      "check": "render.overflow",
+      "severity": "blocker",
+      "where": "phone-390-light: section#hero (right edge 701px), section#hero h1 (right edge 701px), section#hero p (right edge 701px), section#meles (right edge 701px)",
+      "message": "page scrolls sideways: content is 740px wide in a 390px viewport"
+    }
+  ],
+  "review": {
+    "verdict": "fix",
+    "issues": [
+      {
+        "severity": "blocker",
+        "where": "#calendario table.calendar",
+        "problem": "On the 390px screenshots the harvest table runs past the right edge and the whole page scrolls sideways, which the report confirms.",
+        "fix": "Wrap the table in a div with overflow-x: auto so only the table scrolls, and give that container a label and tabindex so keyboard users can scroll it."
+      }
+    ],
+    "notes": "The label concept and the harvest band come through clearly in both themes; the only real problem is the table on phones."
+  },
+  "repair": {
+    "mode": "edits",
+    "applied": 3
+  },
+  "findings": [
+    {
+      "check": "render.fonts",
+      "severity": "info",
+      "where": "desktop-1280-light: ",
+      "message": "failed to load \u003clink\u003e https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600\u0026family=Zilla+Slab:wght@600;700\u0026display=swap"
+    }
+  ],
+  "outputs": {
+    "brief.json": "out/brief.json",
+    "copy.json": "out/copy.json",
+    "critique.json": "out/critique.json",
+    "index.html": "out/index.html",
+    "plan.draft.json": "out/plan.draft.json",
+    "plan.json": "out/plan.json",
+    "review.json": "out/review.json",
+    "screenshots/final": "out/screenshots/final",
+    "screenshots/pre-repair": "out/screenshots/pre-repair",
+    "source.html": "out/source.html"
+  }
+}

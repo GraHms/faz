@@ -1,0 +1,37 @@
+```json
+{
+  "language": "pt-MZ",
+  "page_kind": "product",
+  "subject": "Cooperativa Apícola de Lichinga, 40 apicultores do Niassa que vendem mel cru em Maputo e na Matola.",
+  "audience": "Clientes em Maputo e na Matola que recebem a ligação pelo WhatsApp ou pelo Instagram.",
+  "page_job": "Levar o visitante a encomendar mel pelo WhatsApp.",
+  "primary_action": {"label": "Encomendas só pelo WhatsApp", "target": "https://wa.me/258840000000"},
+  "provided_facts": [
+    {"key": "nome", "value": "Cooperativa Apícola de Lichinga"},
+    {"key": "local", "value": "Niassa"},
+    {"key": "apicultores", "value": "40 apicultores"},
+    {"key": "mel_miombo", "value": "mel de miombo, escuro, colhido de maio a julho"},
+    {"key": "mel_eucalipto", "value": "mel de eucalipto, claro, colhido em setembro"},
+    {"key": "fora_de_epoca", "value": "Fora da época vendemos o stock da última colheita."},
+    {"key": "preco_250", "value": "Frascos de 250 g custam 180 MT"},
+    {"key": "preco_500", "value": "frascos de 500 g custam 320 MT"},
+    {"key": "processamento", "value": "não é aquecido nem filtrado a fino, por isso cristaliza com o frio"},
+    {"key": "whatsapp", "value": "+258 84 000 0000"},
+    {"key": "entregas", "value": "Entregamos às sextas-feiras em Maputo e na Matola."},
+    {"key": "pagamento", "value": "Pagamento na entrega, em numerário ou M-Pesa."}
+  ],
+  "brand": {
+    "name": "Cooperativa Apícola de Lichinga",
+    "existing_colors": [],
+    "existing_fonts": [],
+    "tone": null,
+    "must_use": ["logótipo em anexo"],
+    "must_avoid": ["fotografias de banco de imagens"]
+  },
+  "requested_style": "Queremos uma página simples para partilhar no WhatsApp e no Instagram.",
+  "sections_suggested": ["hero", "meles", "calendario", "entregas", "encomendar"],
+  "assets": [{"file": "logo.svg", "kind": "logo", "note": "hexágono âmbar com um favo desenhado a creme"}],
+  "gaps": ["Quanto custa a entrega em cada bairro?", "Qual é o endereço do perfil no Instagram?"],
+  "assumptions": ["Assumed: the WhatsApp link uses the number +258 84 000 0000 without spaces."]
+}
+```

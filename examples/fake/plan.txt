@@ -1,0 +1,46 @@
+```json
+{
+  "concept": "A warm, modern landing page with a full viewport hero and soft cards for each honey.",
+  "bold_move": "A large centered headline over a 100vh hero with a soft gradient.",
+  "subject_detail": "Jar sizes in grams in the product cards.",
+  "theme_mode": "dual",
+  "colors": {
+    "light": [
+      {"name": "cream", "role": "bg", "hex": "#F4F0E8", "source": "warm and inviting"},
+      {"name": "card", "role": "surface", "hex": "#FFFFFF", "source": "clean"},
+      {"name": "ink", "role": "text", "hex": "#1F1B16", "source": "readable"},
+      {"name": "stone", "role": "muted", "hex": "#A39B8B", "source": "soft"},
+      {"name": "terracotta", "role": "accent", "hex": "#D4775A", "source": "earthy"}
+    ],
+    "dark": [
+      {"name": "night", "role": "bg", "hex": "#111111", "source": "modern"},
+      {"name": "card", "role": "surface", "hex": "#1C1C1C", "source": "clean"},
+      {"name": "paper", "role": "text", "hex": "#F2EEE6", "source": "readable"},
+      {"name": "stone", "role": "muted", "hex": "#8A8378", "source": "soft"},
+      {"name": "terracotta", "role": "accent", "hex": "#E08A6D", "source": "earthy"}
+    ]
+  },
+  "type": {
+    "display": {"family": "Inter", "weights": [700], "fallback": "system-ui, sans-serif", "source": "clean and modern"},
+    "body": {"family": "Inter", "weights": [400], "fallback": "system-ui, sans-serif", "source": "clean and modern"},
+    "scale_rem": [0.875, 1, 1.25, 1.75, 2.75, 4.5]
+  },
+  "layout": {
+    "concept": "Centered single column with rounded cards.",
+    "alignment": "center",
+    "alignment_reason": "feels balanced",
+    "wireframe_desktop": "[ HERO 100vh ]\n[ card ][ card ]\n[ steps ]",
+    "wireframe_mobile": "[ HERO ]\n[ card ]\n[ card ]"
+  },
+  "sections": [
+    {"id": "hero", "treatment": "100vh hero, centered headline, gradient wash"},
+    {"id": "meles", "treatment": "two rounded cards with soft shadow"},
+    {"id": "calendario", "treatment": "simple text"},
+    {"id": "entregas", "treatment": "rounded card"},
+    {"id": "encomendar", "treatment": "three steps with fade up on scroll"}
+  ],
+  "images": [{"use": "header", "file": "logo.svg", "drawn": null}],
+  "motion": "fade up on scroll for each section",
+  "principles": ["clean", "modern", "warm"]
+}
+```

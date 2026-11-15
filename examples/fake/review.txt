@@ -1,0 +1,14 @@
+```json
+{
+  "verdict": "fix",
+  "issues": [
+    {
+      "severity": "blocker",
+      "where": "#calendario table.calendar",
+      "problem": "On the 390px screenshots the harvest table runs past the right edge and the whole page scrolls sideways, which the report confirms.",
+      "fix": "Wrap the table in a div with overflow-x: auto so only the table scrolls, and give that container a label and tabindex so keyboard users can scroll it."
+    }
+  ],
+  "notes": "The label concept and the harvest band come through clearly in both themes; the only real problem is the table on phones."
+}
+```

@@ -1,0 +1,192 @@
+```html
+<!DOCTYPE html>
+<html lang="pt-MZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mel cru do Niassa</title>
+<meta name="description" content="Mel cru de miombo e de eucalipto, colhido por 40 apicultores no Niassa. Entregas em Maputo e na Matola às sextas-feiras.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600&family=Zilla+Slab:wght@600;700&display=swap">
+<style>
+:root {
+  /* Layout: a narrow label column on the left, with the harvest band running edge to edge. */
+  --bg: #FBF3DC;        /* wax */
+  --surface: #F2E2B3;   /* comb */
+  --text: #2B1D0E;      /* propolis */
+  --muted: #6B5532;     /* bark */
+  --accent: #9A5B00;    /* amber */
+  --accent-ink: #FFF6DF;/* label */
+  --font-display: "Zilla Slab", Rockwell, "Roboto Slab", Georgia, serif;
+  --font-body: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --gutter: clamp(16px, 5vw, 56px);
+  --rule: 2px solid var(--text);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17120A;        /* hive */
+    --surface: #231A0D;   /* frame */
+    --text: #F5E8C8;      /* cappings */
+    --muted: #C2AA7A;     /* smoke */
+    --accent: #F0A832;    /* nectar */
+    --accent-ink: #17120A;/* hive ink */
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17120A;
+  --surface: #231A0D;
+  --text: #F5E8C8;
+  --muted: #C2AA7A;
+  --accent: #F0A832;
+  --accent-ink: #17120A;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 1.0625rem/1.6 var(--font-body);
+}
+img { max-width: 100%; height: auto; }
+a { color: var(--text); text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.1; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 65ch; }
+
+.wrap { width: min(100% - 2 * var(--gutter), 70rem); margin-inline: auto; }
+
+.site { border-bottom: var(--rule); }
+.site .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 0.75rem; }
+.brand { display: flex; align-items: center; gap: 0.75rem; min-height: 44px; font-family: var(--font-display); font-weight: 600; font-size: 1.125rem; text-decoration: none; }
+.brand img { width: 44px; height: 44px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 48px; padding: 0.75rem 1.25rem;
+  background: var(--accent); color: var(--accent-ink);
+  font-weight: 600; text-decoration: none; border-radius: 2px;
+}
+.btn:hover { text-decoration: underline; text-decoration-color: var(--accent-ink); }
+
+main { display: grid; gap: clamp(3rem, 8vw, 5.5rem); padding-block: clamp(2.5rem, 6vw, 4.5rem); }
+section { display: grid; gap: 1rem; }
+section h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); }
+
+.hero { gap: 1.5rem; }
+.hero > * { max-width: 46rem; }
+.hero h1 { font-size: clamp(2.5rem, 7.5vw, 3.75rem); }
+.hero p { font-size: 1.25rem; }
+.hero .btn { justify-self: start; }
+
+.labels { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 2px; background: var(--text); border: var(--rule); }
+.labels > * { background: var(--bg); padding: 1.25rem 1.5rem; display: grid; gap: 0.35rem; align-content: start; }
+.labels h3 { font-size: 1.75rem; }
+.prices { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; font-variant-numeric: tabular-nums; }
+.prices li { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--muted); padding-block: 0.4rem; font-size: 1.125rem; }
+.prices strong { font-family: var(--font-display); font-size: 1.375rem; }
+.note { color: var(--muted); }
+
+/* Harvest band */
+.band { background: var(--surface); border-block: 4px solid var(--text); padding-block: 2rem; }
+.band .wrap { display: grid; gap: 1.25rem; }
+.calendar { min-width: 720px; width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.calendar th, .calendar td { border: 1px solid var(--muted); padding: 0.6rem 0.25rem; text-align: center; }
+.calendar thead th { font-family: var(--font-display); font-weight: 600; font-size: 0.95rem; }
+.calendar tbody th { text-align: left; padding-inline: 0.75rem; font-weight: 600; white-space: nowrap; }
+.calendar td.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1.5rem; counter-reset: step; }
+.steps li { counter-increment: step; display: grid; gap: 0.35rem; border-top: var(--rule); padding-top: 0.75rem; }
+.steps li::before { content: counter(step); font-family: var(--font-display); font-weight: 700; font-size: 2.75rem; line-height: 1; color: var(--accent); }
+.steps h3 { font-size: 1.25rem; }
+
+mark.ph { background: transparent; color: var(--text); border: 2px dashed var(--accent); padding: 0 0.3em; border-radius: 2px; }
+
+footer { border-top: var(--rule); padding-block: 1.5rem 2.5rem; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="#hero"><img src="assets/logo.svg" alt="" width="44" height="44">Cooperativa Apícola de Lichinga</a>
+  </div>
+</header>
+
+<main>
+  <section id="hero" class="hero wrap">
+    <h1>Mel cru do Niassa, colhido por 40 apicultores</h1>
+    <p>Mel de miombo e de eucalipto da Cooperativa Apícola de Lichinga, em frascos de 250 g e 500 g, entregue às sextas-feiras em Maputo e na Matola.</p>
+    <a class="btn" href="https://wa.me/258840000000">Encomendar pelo WhatsApp</a>
+  </section>
+
+  <section id="meles" class="wrap">
+    <h2>Dois méis, duas colheitas</h2>
+    <div class="labels">
+      <article>
+        <h3>Mel de miombo</h3>
+        <p>Escuro, das flores da floresta de miombo. Colhido de maio a julho.</p>
+      </article>
+      <article>
+        <h3>Mel de eucalipto</h3>
+        <p>Claro, das flores de eucalipto. Colhido em setembro.</p>
+      </article>
+      <div>
+        <ul class="prices">
+          <li><span>Frasco de 250 g</span> <strong>180 MT</strong></li>
+          <li><span>Frasco de 500 g</span> <strong>320 MT</strong></li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">O nosso mel não é aquecido nem filtrado a fino. Por isso cristaliza com o frio, e continua bom.</p>
+  </section>
+
+  <section id="calendario" class="band">
+    <div class="wrap">
+      <h2>Quando há cada mel</h2>
+      <p>A colheita segue as flores. Fora da época vendemos o stock da última colheita.</p>
+      <table class="calendar">
+        <caption class="sr">Meses de colheita de cada mel</caption>
+        <thead>
+          <tr><th scope="col"><span class="sr">Mel</span></th><th scope="col">jan</th><th scope="col">fev</th><th scope="col">mar</th><th scope="col">abr</th><th scope="col">mai</th><th scope="col">jun</th><th scope="col">jul</th><th scope="col">ago</th><th scope="col">set</th><th scope="col">out</th><th scope="col">nov</th><th scope="col">dez</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Miombo</th><td></td><td></td><td></td><td></td><td class="on">colheita</td><td class="on">colheita</td><td class="on">colheita</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th scope="row">Eucalipto</th><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="on">colheita</td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="entregas" class="wrap">
+    <h2>Entregas em Maputo e na Matola</h2>
+    <p>Entregamos às sextas-feiras. Pagamento na entrega, em numerário ou M-Pesa.</p>
+    <p>Custo de entrega: <mark class="ph" data-ph="entrega">valor da entrega por bairro</mark>.</p>
+  </section>
+
+  <section id="encomendar" class="wrap">
+    <h2>Como encomendar</h2>
+    <ol class="steps">
+      <li><h3>Escolha o mel e o tamanho</h3><p>Miombo ou eucalipto, 250 g ou 500 g.</p></li>
+      <li><h3>Envie uma mensagem pelo WhatsApp</h3><p>Diga quantos frascos quer e o bairro de entrega.</p></li>
+      <li><h3>Receba na sexta-feira</h3><p>Paga na entrega, em numerário ou M-Pesa.</p></li>
+    </ol>
+    <a class="btn" href="https://wa.me/258840000000" style="justify-self: start">Encomendar pelo WhatsApp</a>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Cooperativa Apícola de Lichinga, Niassa.</span>
+    <span><a href="#" data-ph="instagram">Instagram</a> <mark class="ph" data-ph="instagram">endereço do perfil no Instagram</mark></span>
+  </div>
+</footer>
+</body>
+</html>
+```

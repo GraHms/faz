@@ -1,0 +1,58 @@
+```json
+{
+  "page_title": "Mel cru do Niassa",
+  "meta_description": "Mel cru de miombo e de eucalipto, colhido por 40 apicultores no Niassa. Entregas em Maputo e na Matola às sextas-feiras.",
+  "primary_cta": {"label": "Encomendar pelo WhatsApp", "href": "https://wa.me/258840000000"},
+  "sections": [
+    {
+      "id": "hero",
+      "purpose": "Dizer o que é, de onde vem e como se encomenda.",
+      "heading": "Mel cru do Niassa, colhido por 40 apicultores",
+      "body": ["Mel de miombo e de eucalipto da Cooperativa Apícola de Lichinga, em frascos de 250 g e 500 g, entregue às sextas-feiras em Maputo e na Matola."],
+      "cta": {"label": "Encomendar pelo WhatsApp", "href": "https://wa.me/258840000000"}
+    },
+    {
+      "id": "meles",
+      "purpose": "Mostrar os dois méis e os preços.",
+      "heading": "Dois méis, duas colheitas",
+      "body": ["O nosso mel não é aquecido nem filtrado a fino. Por isso cristaliza com o frio, e continua bom."],
+      "items": [
+        {"title": "Mel de miombo", "text": "Escuro, das flores da floresta de miombo. Colhido de maio a julho."},
+        {"title": "Mel de eucalipto", "text": "Claro, das flores de eucalipto. Colhido em setembro."},
+        {"title": "Frasco de 250 g", "text": "180 MT"},
+        {"title": "Frasco de 500 g", "text": "320 MT"}
+      ]
+    },
+    {
+      "id": "calendario",
+      "purpose": "Explicar quando há cada mel.",
+      "heading": "Quando há cada mel",
+      "body": ["A colheita segue as flores. Fora da época vendemos o stock da última colheita."]
+    },
+    {
+      "id": "entregas",
+      "purpose": "Dizer onde e quando entregamos e como se paga.",
+      "heading": "Entregas em Maputo e na Matola",
+      "body": ["Entregamos às sextas-feiras. Pagamento na entrega, em numerário ou M-Pesa.", "Custo de entrega: [[entrega: valor da entrega por bairro]]."]
+    },
+    {
+      "id": "encomendar",
+      "purpose": "Dar os passos para encomendar.",
+      "heading": "Como encomendar",
+      "body": [],
+      "items": [
+        {"title": "Escolha o mel e o tamanho", "text": "Miombo ou eucalipto, 250 g ou 500 g."},
+        {"title": "Envie uma mensagem pelo WhatsApp", "text": "Diga quantos frascos quer e o bairro de entrega."},
+        {"title": "Receba na sexta-feira", "text": "Paga na entrega, em numerário ou M-Pesa."}
+      ],
+      "cta": {"label": "Encomendar pelo WhatsApp", "href": "https://wa.me/258840000000"}
+    }
+  ],
+  "footer": {"text": "Cooperativa Apícola de Lichinga, Niassa.", "links": [{"label": "Instagram", "href": "[[instagram: endereço do perfil no Instagram]]"}]},
+  "placeholders": [
+    {"key": "entrega", "description": "valor da entrega por bairro"},
+    {"key": "instagram", "description": "endereço do perfil no Instagram"}
+  ],
+  "subject_detail": "Os pesos dos frascos em gramas e os meses de colheita de cada mel, nas secções meles e calendario."
+}
+```

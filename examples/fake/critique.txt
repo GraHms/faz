@@ -1,0 +1,65 @@
+```json
+{
+  "axes": [
+    {"axis": "palette", "verdict": "generic", "reason": "Cream with terracotta, and near black with a single accent, would appear for any food brand."},
+    {"axis": "type", "verdict": "generic", "reason": "Inter for everything is the safe default and says nothing about honey or a cooperative."},
+    {"axis": "layout", "verdict": "generic", "reason": "A centered 100vh hero with rounded cards is the template look."},
+    {"axis": "hero", "verdict": "generic", "reason": "A large headline on a gradient ignores the most characteristic thing here: harvest months and jar weights."},
+    {"axis": "bold move", "verdict": "generic", "reason": "The hero is not specific to the subject."},
+    {"axis": "motion", "verdict": "generic", "reason": "Fade up on scroll on every section hides content at rest."}
+  ],
+  "changes": [
+    {"what": "Concept rebuilt around the batch label on each jar", "why": "Jar weights, harvest months and origin are the facts buyers ask about, and they already read like a printed label."},
+    {"what": "Bold move moved to a harvest calendar band", "why": "Twelve months with each honey's harvest marked is the one thing only this subject has."},
+    {"what": "Palette taken from wax paper, propolis and amber honey", "why": "Replaces the generic cream and terracotta; muted text now passes contrast."},
+    {"what": "Display face changed to Zilla Slab, body to Source Sans 3", "why": "A slab reads like stamped crate labels; Inter was a default."},
+    {"what": "Left aligned label column, hero sized to content, no motion", "why": "Centered 100vh and scroll fades were defaults and hid content at rest."}
+  ],
+  "revised_plan": {
+    "concept": "The page reads like the batch label stuck on every jar: origin, weights and harvest months, printed plainly.",
+    "bold_move": "A full width harvest calendar band: twelve months with the miombo and eucalyptus harvests marked like a batch stamp.",
+    "subject_detail": "Jar weights in grams with prices in MT, and the harvest months for each honey in the calendar band.",
+    "theme_mode": "dual",
+    "colors": {
+      "light": [
+        {"name": "wax", "role": "bg", "hex": "#FBF3DC", "source": "unbleached wax paper the cooperative wraps jars in"},
+        {"name": "comb", "role": "surface", "hex": "#F2E2B3", "source": "capped honeycomb"},
+        {"name": "propolis", "role": "text", "hex": "#2B1D0E", "source": "propolis, the dark resin bees seal the hive with"},
+        {"name": "bark", "role": "muted", "hex": "#6B5532", "source": "miombo bark"},
+        {"name": "amber", "role": "accent", "hex": "#9A5B00", "source": "dark miombo honey against light"},
+        {"name": "label", "role": "accent_ink", "hex": "#FFF6DF", "source": "label paper"}
+      ],
+      "dark": [
+        {"name": "hive", "role": "bg", "hex": "#17120A", "source": "inside the hive box"},
+        {"name": "frame", "role": "surface", "hex": "#231A0D", "source": "old wooden frames"},
+        {"name": "cappings", "role": "text", "hex": "#F5E8C8", "source": "wax cappings"},
+        {"name": "smoke", "role": "muted", "hex": "#C2AA7A", "source": "smoker haze"},
+        {"name": "nectar", "role": "accent", "hex": "#F0A832", "source": "light eucalyptus honey"},
+        {"name": "hive_ink", "role": "accent_ink", "hex": "#17120A", "source": "same as the hive"}
+      ]
+    },
+    "type": {
+      "display": {"family": "Zilla Slab", "weights": [600, 700], "fallback": "Rockwell, 'Roboto Slab', Georgia, serif", "source": "stamped lettering on the cooperative's crates"},
+      "body": {"family": "Source Sans 3", "weights": [400, 600], "fallback": "system-ui, -apple-system, 'Segoe UI', sans-serif", "source": "plain and legible on cheap Android screens"},
+      "scale_rem": [0.875, 1.0625, 1.25, 1.75, 2.5, 3.75]
+    },
+    "layout": {
+      "concept": "A narrow label column on the left, with the harvest band running edge to edge.",
+      "alignment": "left",
+      "alignment_reason": "labels and price lists are read left to right, line by line",
+      "wireframe_desktop": "[logo  name ............ Encomendar]\n[H1 label column      ]\n[price lines          ]\n[======= harvest band: jan ... dez =======]\n[delivery] [steps 1 2 3]",
+      "wireframe_mobile": "[logo name]\n[H1]\n[CTA]\n[honey 1]\n[honey 2]\n[prices]\n[band, scrolls inside]\n[steps]"
+    },
+    "sections": [
+      {"id": "hero", "treatment": "Label column: H1 in Zilla Slab, one line of facts, the WhatsApp button. Sized to content."},
+      {"id": "meles", "treatment": "Two honeys as label panels separated by 2px rules in the text color, prices as tabular lines in grams and MT."},
+      {"id": "calendario", "treatment": "Harvest band on the surface color between two heavy rules: a table of twelve months, harvest months filled with the accent."},
+      {"id": "entregas", "treatment": "Short text block, the delivery cost placeholder marked."},
+      {"id": "encomendar", "treatment": "A real three step sequence with large slab numerals, then the button."}
+    ],
+    "images": [{"use": "header", "file": "logo.svg", "drawn": null}],
+    "motion": "none",
+    "principles": ["Facts before adjectives", "Rules and type do the decorating, not shadows", "One bold element: the harvest band", "Everything readable on a cheap phone in daylight"]
+  }
+}
+```

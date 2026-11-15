@@ -1,0 +1,19 @@
+```json
+{
+  "edits": [
+    {
+      "find": "/* Harvest band */\n",
+      "replace": "/* Harvest band */\n.scroll { overflow-x: auto; }\n"
+    },
+    {
+      "find": "      <table class=\"calendar\">",
+      "replace": "      <div class=\"scroll\" role=\"region\" aria-label=\"Calendário de colheitas\" tabindex=\"0\">\n      <table class=\"calendar\">"
+    },
+    {
+      "find": "      </table>\n",
+      "replace": "      </table>\n      </div>\n"
+    }
+  ],
+  "skipped": []
+}
+```
