@@ -51,7 +51,7 @@ func TestParseStreamKeepsOnlyText(t *testing.T) {
 func TestBuildBody(t *testing.T) {
 	a := &Anthropic{CacheTTL: "1h"}
 	b, err := a.buildBody(Request{Model: "claude-opus-5-5", MaxTokens: 100, System: "sys", Effort: "high",
-		Parts: []Part{{Text: "hello"}, {Image: []byte{1, 2, 3}, MediaType: "image/png"}}})
+		Parts: []Part{{Text: "page", Cache: true}, {Text: "hello"}, {Image: []byte{1, 2, 3}, MediaType: "image/png"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +72,14 @@ func TestBuildBody(t *testing.T) {
 		t.Error("system prompt not cached for 1h")
 	}
 	content := m["messages"].([]any)[0].(map[string]any)["content"].([]any)
-	if len(content) != 2 || content[1].(map[string]any)["type"] != "image" {
+	if len(content) != 3 || content[2].(map[string]any)["type"] != "image" {
 		t.Errorf("content = %v", content)
+	}
+	if _, ok := content[0].(map[string]any)["cache_control"]; !ok {
+		t.Error("a part marked Cache must carry cache_control")
+	}
+	if _, ok := content[1].(map[string]any)["cache_control"]; ok {
+		t.Error("only marked parts carry cache_control")
 	}
 }
 

@@ -1,0 +1,12 @@
+```json
+{
+  "summary": "Pus o custo de entrega: 50 MT em Maputo e na Matola.",
+  "edits": [
+    {
+      "find": "<p>Custo de entrega: <mark class=\"ph\" data-ph=\"entrega\">valor da entrega por bairro</mark>.</p>",
+      "replace": "<p>Custo de entrega: 50 MT em Maputo e na Matola.</p>"
+    }
+  ],
+  "skipped": []
+}
+```

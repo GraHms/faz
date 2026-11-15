@@ -32,6 +32,11 @@
   "sections_suggested": ["hero", "meles", "calendario", "entregas", "encomendar"],
   "assets": [{"file": "logo.svg", "kind": "logo", "note": "hexágono âmbar com um favo desenhado a creme"}],
   "gaps": ["Quanto custa a entrega em cada bairro?", "Qual é o endereço do perfil no Instagram?"],
-  "assumptions": ["Assumed: the WhatsApp link uses the number +258 84 000 0000 without spaces."]
+  "assumptions": ["Assumed: the WhatsApp link uses the number +258 84 000 0000 without spaces."],
+  "questions": [
+    {"id": "entrega", "text": "Quanto custa a entrega em Maputo e na Matola?", "hint": "Os clientes perguntam antes de encomendar.", "kind": "text", "options": []},
+    {"id": "fotos", "text": "Tens fotografias vossas das colmeias ou dos frascos?", "hint": "Fotos reais ajudam mais do que qualquer texto.", "kind": "choice", "options": [{"value": "sim", "label": "Sim, vou enviar"}, {"value": "nao", "label": "Ainda não"}]},
+    {"id": "sentir", "text": "Como queres que o site se sinta?", "hint": "Podes mudar depois, a conversar.", "kind": "choice", "options": [{"value": "rotulo", "label": "Rótulo de cooperativa"}, {"value": "floresta", "label": "Floresta de miombo"}, {"value": "decide", "label": "Decide tu"}]}
+  ]
 }
 ```

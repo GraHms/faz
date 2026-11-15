@@ -1,0 +1,8 @@
+```json
+{
+  "kind": "edit",
+  "instruction": "Replace the delivery cost placeholder with: 50 MT em Maputo e na Matola.",
+  "reply": "",
+  "options": []
+}
+```

@@ -1,0 +1,19 @@
+# Serves published Faz sites from R2. Deploy with: npx wrangler deploy
+name = "faz-sites"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+# Every subdomain of faz.co.mz, plus the bare domain (redirected to the app).
+# The zone needs a proxied wildcard DNS record (*.faz.co.mz).
+routes = [
+  { pattern = "*.faz.co.mz/*", zone_name = "faz.co.mz" },
+  { pattern = "faz.co.mz/*", zone_name = "faz.co.mz" },
+]
+
+[vars]
+SITES_DOMAIN = "faz.co.mz"
+APP_URL = "https://app.faz.co.mz"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "faz-sites"

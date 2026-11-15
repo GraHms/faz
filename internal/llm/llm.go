@@ -16,6 +16,9 @@ type Part struct {
 	Text      string
 	Image     []byte
 	MediaType string // image/jpeg, image/png, image/webp or image/gif
+	// Cache marks the end of a prefix worth caching, such as the current
+	// page during a run of edits. The API allows a few breakpoints per call.
+	Cache bool
 }
 
 // Request is one single turn call to a model.
