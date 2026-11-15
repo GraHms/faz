@@ -547,6 +547,7 @@ type JobView struct {
 	Status    string          `json:"status"`
 	Attempts  int             `json:"attempts"`
 	LastError *string         `json:"last_error,omitempty"`
+	Progress  *string         `json:"progress,omitempty"`
 	Result    json.RawMessage `json:"result,omitempty"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
@@ -556,11 +557,18 @@ type JobView struct {
 func (s *Store) Job(ctx context.Context, id int64, userID string) (JobView, error) {
 	var j JobView
 	var result []byte
-	err := s.DB.QueryRowContext(ctx, `SELECT id, kind, status, attempts, last_error, result, created_at, updated_at
+	err := s.DB.QueryRowContext(ctx, `SELECT id, kind, status, attempts, last_error, progress, result, created_at, updated_at
 		FROM jobs WHERE id = $1 AND payload->>'user_id' = $2`, id, userID).
-		Scan(&j.ID, &j.Kind, &j.Status, &j.Attempts, &j.LastError, &result, &j.CreatedAt, &j.UpdatedAt)
+		Scan(&j.ID, &j.Kind, &j.Status, &j.Attempts, &j.LastError, &j.Progress, &result, &j.CreatedAt, &j.UpdatedAt)
 	j.Result = result
 	return j, notFound(err)
+}
+
+// SetJobProgress records the stage a running job has reached, so the editor
+// can show real progress instead of a timer.
+func (s *Store) SetJobProgress(ctx context.Context, id int64, stage string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE jobs SET progress = $2 WHERE id = $1 AND status = 'running'`, id, stage)
+	return err
 }
 
 // ActiveJob reports whether a site has a queued or running job.

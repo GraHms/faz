@@ -222,6 +222,10 @@ func TestProductEndToEnd(t *testing.T) {
 	if code := h.call("GET", "/v1/sites/"+id, tok, nil, &site); code != 200 || site.Site.Status != "ready" || site.Site.CurrentVersion != 1 {
 		t.Fatalf("after build: %d %+v", code, site.Site)
 	}
+	var job store.JobView
+	if code := h.call("GET", fmt.Sprintf("/v1/jobs/%d", queued.JobID), tok, nil, &job); code != 200 || job.Status != "succeeded" || job.Progress == nil {
+		t.Fatalf("build job: %d %+v", code, job)
+	}
 	last := site.Messages[len(site.Messages)-1]
 	if !strings.Contains(last.Text, "2 informações") {
 		t.Errorf("build message %q should mention the 2 placeholders", last.Text)

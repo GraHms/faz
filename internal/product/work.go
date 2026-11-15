@@ -54,6 +54,21 @@ func (s *Service) fetchAssets(ctx context.Context, siteID, dir string) ([]assets
 func versionPrefix(siteID string, n int) string { return fmt.Sprintf("sites/%s/v%d", siteID, n) }
 
 // handleBuild runs the full pipeline for a site's first version.
+// progress returns a stage hook that records a job's stage, skipping
+// repeats. A failed write only costs the editor a progress tick.
+func (s *Service) progress(ctx context.Context, jobID int64) func(string) {
+	last := ""
+	return func(stage string) {
+		if stage == last {
+			return
+		}
+		last = stage
+		if err := s.Store.SetJobProgress(ctx, jobID, stage); err != nil {
+			s.log().Warn("job progress", "job", jobID, "err", err)
+		}
+	}
+}
+
 func (s *Service) handleBuild(ctx context.Context, j jobs.Job) (any, error) {
 	var pl sitePayload
 	if err := json.Unmarshal(j.Payload, &pl); err != nil {
@@ -82,6 +97,7 @@ func (s *Service) handleBuild(ctx context.Context, j jobs.Job) (any, error) {
 	out := filepath.Join(dir, "out")
 	p := s.pipe(out, composeBrief(site, brief.Questions, answers))
 	p.Opt.Assets = files
+	p.Opt.OnStage = s.progress(ctx, j.ID)
 	rep, err := p.Run(ctx)
 	// Spend is recorded even when the build fails.
 	s.recordUsage(ctx, s.Store.DB, p.Report(), pl.UserID, &site.ID, &j.ID, "build")
@@ -161,6 +177,7 @@ func (s *Service) handleEdit(ctx context.Context, j jobs.Job) (any, error) {
 	}
 	out := filepath.Join(dir, "out")
 	p := s.pipe(out, "")
+	p.Opt.OnStage = s.progress(ctx, j.ID)
 	p.Opt.Assets = files
 	res, err := p.Edit(ctx, pipeline.EditInput{Source: string(src.Body), Brief: &brief, Copy: &copyDoc, Plan: &plan,
 		Instruction: pl.Instruction, Structural: pl.Structural})
