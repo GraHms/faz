@@ -1,0 +1,597 @@
+// An in-browser imitation of fazd for UI work without the backend
+// (VITE_API_MODE=mock). It keeps the same rules where the UI depends on
+// them: prices, free questions, charged edits, refunds, busy sites,
+// subdomain checks and wallet prefixes. It is not a test of the backend.
+//
+// Testing hooks: a phone number ending in 0000 makes a payment fail, and a
+// message containing "estraga" makes an edit fail and refund.
+
+import { ApiError, type Api } from './client';
+import type {
+  Account,
+  Asset,
+  Job,
+  LedgerEntry,
+  Message,
+  MessageKind,
+  Payment,
+  Pricing,
+  Question,
+  Session,
+  Site,
+  SiteView,
+  User,
+  Version,
+} from './types';
+import { parsePhone, subdomainProblem, vatIncluded } from '../lib/format';
+import { renderSamplePage } from './samplePage';
+
+const pricing: Pricing = {
+  mzn_per_credit: 1,
+  signup_gift: 19,
+  first_page: 19,
+  edit: 5,
+  structural_edit: 20,
+  topup_min_mzn: 200,
+  topup_max_mzn: 50000,
+};
+
+/** Stage timeline for a mock build, in seconds from the start. */
+const buildStages: [stage: string, at: number][] = [
+  ['content', 0],
+  ['plan', 3],
+  ['critique', 5],
+  ['build', 7],
+  ['review', 11],
+  ['verify', 13],
+];
+const buildSeconds = 15;
+const editStages: [stage: string, at: number][] = [
+  ['edit', 0],
+  ['verify', 4],
+];
+const editSeconds = 6;
+const paymentSeconds = 5;
+
+const reserved = new Set(['www', 'api', 'app', 'admin', 'faz', 'ajuda', 'entrar', 'conta', 'pagamentos', 'mpesa', 'emola']);
+
+interface MockJob extends Job {
+  user_id: string;
+  site_id?: string;
+  payment_id?: string;
+  credits: number;
+  request?: string;
+  structural?: boolean;
+  started: number;
+  seconds: number;
+  stages: [string, number][];
+}
+
+interface State {
+  seq: number;
+  users: (User & { password: string })[];
+  tokens: Record<string, string>;
+  ledger: (LedgerEntry & { user_id: string })[];
+  sites: (Site & { user_id: string; questions: Question[]; accent: number })[];
+  messages: (Message & { site_id: string })[];
+  versions: (Version & { site_id: string })[];
+  assets: (Asset & { site_id: string })[];
+  jobs: MockJob[];
+  payments: (Payment & { user_id: string; settles_at: number })[];
+}
+
+const KEY = 'faz.mock.v1';
+
+function empty(): State {
+  return { seq: 1, users: [], tokens: {}, ledger: [], sites: [], messages: [], versions: [], assets: [], jobs: [], payments: [] };
+}
+
+export interface MockOptions {
+  /** Persist to localStorage so a reload keeps the data. Default true. */
+  persist?: boolean;
+  /** Network delay range in ms. Default [250, 600]. */
+  latency?: [number, number];
+  getToken: () => string | null;
+  now?: () => number;
+}
+
+export function createMockApi(opts: MockOptions): Api {
+  const persist = opts.persist ?? true;
+  const [lo, hi] = opts.latency ?? [250, 600];
+  const now = opts.now ?? (() => Date.now());
+  let s: State = load();
+  const pages = new Map<string, string>();
+
+  function load(): State {
+    if (!persist) return empty();
+    try {
+      const raw = localStorage.getItem(KEY);
+      return raw ? (JSON.parse(raw) as State) : empty();
+    } catch {
+      return empty();
+    }
+  }
+  function save() {
+    if (!persist) return;
+    try {
+      localStorage.setItem(KEY, JSON.stringify(s));
+    } catch {
+      /* storage full or blocked: the mock keeps working in memory */
+    }
+  }
+  const iso = (t = now()) => new Date(t).toISOString();
+  const nextId = () => s.seq++;
+  const wait = () => new Promise<void>((r) => setTimeout(r, lo + Math.random() * (hi - lo)));
+
+  async function run<T>(fn: () => T): Promise<T> {
+    await wait();
+    advance();
+    const out = fn();
+    save();
+    // Callers get copies, as they would from JSON.
+    return structuredClone(out);
+  }
+
+  function fail(status: number, code: string, message: string, details?: Record<string, unknown>): never {
+    throw new ApiError(status, code, message, details);
+  }
+
+  function user(): User & { password: string } {
+    const t = opts.getToken();
+    const id = t ? s.tokens[t] : undefined;
+    const u = id ? s.users.find((x) => x.id === id) : undefined;
+    if (!u) fail(401, 'unauthenticated', 'Entra outra vez para continuar.');
+    return u;
+  }
+  const publicUser = (u: User): User => ({ id: u.id, email: u.email, name: u.name, created_at: u.created_at });
+  const balance = (userId: string) => s.ledger.filter((l) => l.user_id === userId).reduce((a, l) => a + l.delta, 0);
+  const account = (u: User): Account => ({ user: publicUser(u), balance: balance(u.id) });
+
+  function entry(userId: string, delta: number, kind: LedgerEntry['kind'], reason: string, extra: Partial<LedgerEntry> = {}) {
+    s.ledger.push({ id: nextId(), user_id: userId, delta, kind, reason, created_at: iso(), ...extra });
+  }
+  function charge(userId: string, amount: number, reason: string, jobId: number) {
+    const b = balance(userId);
+    if (b < amount) {
+      fail(402, 'insufficient_credits', 'Não tens créditos suficientes.', { needed: amount, balance: b });
+    }
+    entry(userId, -amount, 'charge', reason, { job_id: jobId });
+  }
+
+  function session(u: User): Session {
+    const token = `mock_${crypto.randomUUID()}`;
+    s.tokens[token] = u.id;
+    return { token, expires_at: iso(now() + 30 * 86400_000), account: account(u) };
+  }
+
+  function siteOf(id: string, userId: string) {
+    const site = s.sites.find((x) => x.id === id && x.user_id === userId);
+    if (!site) fail(404, 'not_found', 'Não encontrado.');
+    return site;
+  }
+  const busy = (siteId: string) => s.jobs.some((j) => j.site_id === siteId && (j.status === 'queued' || j.status === 'running'));
+
+  function addMessage(siteId: string, m: Omit<Message, 'id' | 'created_at' | 'credits_charged'> & { credits_charged?: number }) {
+    const msg = { id: nextId(), site_id: siteId, created_at: iso(), credits_charged: 0, ...m };
+    s.messages.push(msg);
+    return msg;
+  }
+  const stripSite = ({ user_id: _u, questions: _q, accent: _a, ...site }: State['sites'][number]): Site => site;
+  const strip = <T extends object>(o: T, ...keys: string[]) => {
+    const c = { ...o } as Record<string, unknown>;
+    for (const k of keys) delete c[k];
+    return c as unknown;
+  };
+
+  function view(site: State['sites'][number]): SiteView {
+    return {
+      site: stripSite(site),
+      questions: site.status === 'questions' ? site.questions : undefined,
+      messages: s.messages.filter((m) => m.site_id === site.id).map((m) => strip(m, 'site_id') as Message),
+      versions: s.versions.filter((v) => v.site_id === site.id).map((v) => strip(v, 'site_id') as Version),
+      assets: s.assets.filter((a) => a.site_id === site.id).map((a) => strip(a, 'site_id') as Asset),
+      live_url: site.subdomain ? `https://${site.subdomain}.faz.co.mz` : undefined,
+      busy: busy(site.id),
+    };
+  }
+
+  function questionsFor(type: string): Question[] {
+    const feel: Record<string, [string, string][]> = {
+      Restaurante: [['mar', 'Fresco, como o mar ao fim da tarde'], ['rotulo', 'Clássico, como um rótulo antigo'], ['noite', 'Escuro e elegante, para jantares']],
+      Salão: [['suave', 'Suave e calmo'], ['vivo', 'Vivo e cheio de cor'], ['luxo', 'Escuro e sofisticado']],
+      Loja: [['tecido', 'Colorido, como os tecidos'], ['limpo', 'Limpo e simples'], ['feira', 'Animado, como uma feira']],
+    };
+    return [
+      { id: 'whatsapp', text: 'Para que número de WhatsApp vão as mensagens dos clientes?', hint: 'Fica no botão principal do site.', kind: 'phone', options: null },
+      {
+        id: 'fotos',
+        text: 'Já tens fotos do negócio?',
+        hint: 'Sem fotos, o site usa ilustrações e deixa espaço para as tuas.',
+        kind: 'choice',
+        options: [
+          { value: 'sim', label: 'Sim, vou enviar agora' },
+          { value: 'depois', label: 'Envio mais tarde' },
+          { value: 'nao', label: 'Não tenho fotos' },
+        ],
+      },
+      {
+        id: 'sentir',
+        text: 'Como queres que o site se sinta?',
+        hint: 'Escolhe o que mais se parece com o teu negócio.',
+        kind: 'choice',
+        options: (feel[type] ?? [['serio', 'Sério e de confiança'], ['proximo', 'Próximo e simpático'], ['ousado', 'Ousado e diferente']]).map(([value, label]) => ({ value, label })),
+      },
+    ];
+  }
+
+  /** Moves jobs and payments forward to the current time. */
+  function advance() {
+    const t = now();
+    for (const j of s.jobs) {
+      if (j.status === 'succeeded' || j.status === 'failed') continue;
+      const elapsed = (t - j.started) / 1000;
+      if (elapsed < j.seconds) {
+        j.status = 'running';
+        j.attempts = 1;
+        j.progress = j.stages.filter(([, at]) => elapsed >= at).pop()?.[0];
+        j.updated_at = iso();
+        continue;
+      }
+      finish(j);
+    }
+    for (const p of s.payments) {
+      if (p.status !== 'pending' || t < p.settles_at) continue;
+      if (p.msisdn.endsWith('0000')) {
+        p.status = 'failed';
+        p.failure_reason = 'Saldo insuficiente na carteira.';
+      } else {
+        p.status = 'succeeded';
+        p.provider_ref = `MOCK${p.id.slice(0, 8).toUpperCase()}`;
+        entry(p.user_id, p.credits, 'topup', `Recarga ${p.method === 'mpesa' ? 'M-Pesa' : 'e-Mola'}`, { payment_id: p.id });
+      }
+      p.updated_at = iso();
+    }
+  }
+
+  function finish(j: MockJob) {
+    j.updated_at = iso();
+    const site = s.sites.find((x) => x.id === j.site_id);
+    if (!site) {
+      j.status = 'failed';
+      return;
+    }
+    if (j.kind === 'edit' && j.request?.toLowerCase().includes('estraga')) {
+      j.status = 'failed';
+      j.result = { rejected: true, reason: 'a alteração partia a página' };
+      entry(j.user_id, j.credits, 'refund', 'Alteração não aplicada', { job_id: j.id });
+      site.status = 'ready';
+      addMessage(site.id, {
+        role: 'assistant',
+        job_id: j.id,
+        text: 'Não apliquei esta alteração porque estragava a página. Os créditos foram devolvidos. Experimenta pedir de outra forma.',
+      });
+      return;
+    }
+    const n = site.current_version + 1;
+    s.versions.push({ site_id: site.id, number: n, kind: j.kind === 'edit' ? 'edit' : 'build', status: 'ok', instruction: j.request, job_id: j.id, created_at: iso() });
+    site.current_version = n;
+    site.status = 'ready';
+    site.updated_at = iso();
+    if (j.structural) site.accent = (site.accent + 1) % 4;
+    j.status = 'succeeded';
+    j.result = { version: n };
+    addMessage(site.id, {
+      role: 'assistant',
+      job_id: j.id,
+      text:
+        j.kind === 'edit'
+          ? `Feito: ${j.request}. Vê a pré-visualização e diz-me se queres mais alguma coisa.`
+          : 'Pronto. Há 2 informações marcadas no site para completares; diz-me aqui e eu ponho-as. Quando quiseres, carrega em Publicar.',
+    });
+  }
+
+  function newJob(kind: string, userId: string, extra: Partial<MockJob>): MockJob {
+    const j: MockJob = {
+      id: nextId(),
+      kind,
+      status: 'queued',
+      attempts: 0,
+      user_id: userId,
+      credits: 0,
+      started: now(),
+      seconds: kind === 'edit' ? editSeconds : buildSeconds,
+      stages: kind === 'edit' ? editStages : buildStages,
+      created_at: iso(),
+      updated_at: iso(),
+      ...extra,
+    };
+    s.jobs.push(j);
+    return j;
+  }
+
+  function classify(text: string): { kind: MessageKind; reply?: string; options?: string[] } {
+    const t = text.toLowerCase();
+    if (t.length < 12 && !/\d/.test(t)) {
+      return { kind: 'vague', reply: 'O que queres mudar exactamente?', options: ['Mudar as cores', 'Mudar o texto do topo', 'Acrescentar o horário'] };
+    }
+    if (/\?$/.test(t.trim()) || /^(quanto|como|posso|onde|quando|o que|qual)\b/.test(t)) {
+      return {
+        kind: 'other',
+        reply: `Cada alteração simples custa ${pricing.edit} créditos e uma mudança grande custa ${pricing.structural_edit}. Perguntas como esta são grátis. O alojamento em nome.faz.co.mz é grátis.`,
+      };
+    }
+    if (/(cores|estilo|aspecto|secção|secções|layout|tudo|página inteira)/.test(t)) return { kind: 'structural' };
+    return { kind: 'edit' };
+  }
+
+  return {
+    pricing: () => run(() => pricing),
+
+    signup: ({ name, email, password }) =>
+      run(() => {
+        name = name.trim();
+        email = email.trim().toLowerCase();
+        if (!name) fail(400, 'invalid_name', 'Escreve o teu nome.');
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(400, 'invalid_email', 'Escreve um email válido.');
+        if (password.length < 8) fail(400, 'weak_password', 'A palavra-passe precisa de pelo menos 8 caracteres.');
+        if (s.users.some((u) => u.email === email)) fail(409, 'email_taken', 'Já existe uma conta com este email.');
+        const u = { id: crypto.randomUUID(), email, name, password, created_at: iso() };
+        s.users.push(u);
+        entry(u.id, pricing.signup_gift, 'signup_gift', 'Oferta de boas vindas');
+        return session(u);
+      }),
+
+    login: ({ email, password }) =>
+      run(() => {
+        const u = s.users.find((x) => x.email === email.trim().toLowerCase() && x.password === password);
+        if (!u) fail(401, 'bad_login', 'Email ou palavra-passe errados.');
+        return session(u);
+      }),
+
+    logout: () =>
+      run(() => {
+        const t = opts.getToken();
+        if (t) delete s.tokens[t];
+      }),
+
+    me: () => run(() => account(user())),
+
+    credits: () =>
+      run(() => {
+        const u = user();
+        return {
+          balance: balance(u.id),
+          ledger: s.ledger.filter((l) => l.user_id === u.id).reverse().map((l) => strip(l, 'user_id') as LedgerEntry),
+          pricing,
+        };
+      }),
+
+    createSite: ({ prompt, business_name, business_type }) =>
+      run(() => {
+        const u = user();
+        prompt = prompt.trim();
+        business_name = business_name.trim();
+        if (prompt.length < 10 || prompt.length > 4000) fail(400, 'invalid_prompt', 'Descreve o site em 10 a 4000 caracteres.');
+        if (!business_name || business_name.length > 80) fail(400, 'invalid_business_name', 'Escreve o nome do negócio.');
+        const site = {
+          id: crypto.randomUUID(),
+          user_id: u.id,
+          business_name,
+          business_type,
+          prompt,
+          status: 'questions' as const,
+          current_version: 0,
+          created_at: iso(),
+          updated_at: iso(),
+          questions: questionsFor(business_type),
+          accent: 0,
+        };
+        s.sites.push(site);
+        return view(site);
+      }),
+
+    sites: () =>
+      run(() => {
+        const u = user();
+        return s.sites
+          .filter((x) => x.user_id === u.id)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))
+          .map(stripSite);
+      }),
+
+    site: (id) => run(() => view(siteOf(id, user().id))),
+
+    uploadAsset: async (siteId, file) => {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        await wait();
+        fail(400, 'invalid_image', 'Envia uma imagem JPEG, PNG ou WebP.');
+      }
+      if (file.size > 15 * 1024 * 1024) {
+        await wait();
+        fail(413, 'file_too_large', 'Envia imagens até 15 MB.');
+      }
+      return run(() => {
+        siteOf(siteId, user().id);
+        const a = { site_id: siteId, name: file.name, media_type: file.type, size: file.size, created_at: iso() };
+        s.assets = s.assets.filter((x) => !(x.site_id === siteId && x.name === file.name));
+        s.assets.push(a);
+        return strip(a, 'site_id') as Asset;
+      });
+    },
+
+    answer: (siteId, answers, skip = false) =>
+      run(() => {
+        const u = user();
+        const site = siteOf(siteId, u.id);
+        if (site.status !== 'questions') fail(409, 'not_waiting_for_answers', 'Este site já está a ser construído.');
+        // Stored like the backend's labelAnswers: labels for choices, +258 numbers.
+        const labeled: Record<string, string> = {};
+        if (!skip) {
+          for (const q of site.questions) {
+            const a = answers[q.id]?.trim();
+            if (!a) continue;
+            if (q.kind === 'phone' && !parsePhone(a).ok) {
+              fail(400, 'invalid_phone', 'Escreve um número de telemóvel moçambicano, por exemplo 84 123 4567.');
+            }
+            if ((q.kind === 'choice' || q.kind === 'multi') && !a.split(',').every((v) => q.options?.some((o) => o.value === v.trim()))) {
+              fail(400, 'invalid_option', `Opção desconhecida para "${q.text}".`);
+            }
+            const phone = parsePhone(a);
+            labeled[q.id] =
+              q.kind === 'phone' && phone.ok
+                ? `+${phone.msisdn}`
+                : q.options
+                  ? a.split(',').map((v) => q.options!.find((o) => o.value === v.trim())!.label).join(', ')
+                  : a;
+          }
+        }
+        const j = newJob('build', u.id, { site_id: site.id, credits: pricing.first_page });
+        try {
+          charge(u.id, pricing.first_page, `Primeiro site: ${site.business_name}`, j.id);
+        } catch (e) {
+          s.jobs.pop();
+          throw e;
+        }
+        site.answers = labeled;
+        site.status = 'building';
+        addMessage(site.id, {
+          role: 'assistant',
+          job_id: j.id,
+          credits_charged: pricing.first_page,
+          text: 'Obrigado. Estou a construir o teu site; demora um ou dois minutos.',
+        });
+        return { job_id: j.id };
+      }),
+
+    sendMessage: (siteId, text) =>
+      run(() => {
+        const u = user();
+        const site = siteOf(siteId, u.id);
+        text = text.trim();
+        if (!text || text.length > 2000) fail(400, 'invalid_message', 'Escreve o pedido em até 2000 caracteres.');
+        if (site.current_version === 0 || site.status !== 'ready' || busy(site.id)) {
+          fail(409, 'site_busy', 'Espera que o site termine a alteração em curso.');
+        }
+        const c = classify(text);
+        if (c.kind !== 'edit' && c.kind !== 'structural') {
+          const um = addMessage(site.id, { role: 'user', text });
+          const am = addMessage(site.id, { role: 'assistant', text: c.reply ?? '', options: c.options });
+          return { messages: [um, am].map((m) => strip(m, 'site_id') as Message), credits_charged: 0, kind: c.kind };
+        }
+        const price = c.kind === 'structural' ? pricing.structural_edit : pricing.edit;
+        const j = newJob('edit', u.id, { site_id: site.id, credits: price, request: text, structural: c.kind === 'structural' });
+        try {
+          charge(u.id, price, `Alteração: ${text.slice(0, 80)}`, j.id);
+        } catch (e) {
+          s.jobs.pop();
+          throw e;
+        }
+        site.status = 'editing';
+        const um = addMessage(site.id, { role: 'user', text, job_id: j.id, credits_charged: price });
+        return { messages: [strip(um, 'site_id') as Message], job_id: j.id, credits_charged: price, kind: c.kind };
+      }),
+
+    preview: (siteId, version) =>
+      run(() => {
+        const site = siteOf(siteId, user().id);
+        const v = version || site.current_version;
+        if (!v) fail(409, 'not_built', 'O site ainda não foi construído.');
+        const key = `${site.id}:${v}:${site.accent}`;
+        let url = pages.get(key);
+        if (!url) {
+          const html = renderSamplePage({ name: site.business_name, type: site.business_type, prompt: site.prompt, accent: site.accent, version: v });
+          url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+          pages.set(key, url);
+        }
+        return { url, version: v, expires_at: iso(now() + 15 * 60_000) };
+      }),
+
+    availability: (name, siteId) =>
+      run(() => {
+        user();
+        name = name.toLowerCase();
+        const problem = subdomainProblem(name);
+        if (problem) return { name, available: false, reason: problem };
+        if (reserved.has(name)) return { name, available: false, reason: 'Este endereço está reservado.' };
+        const owner = s.sites.find((x) => x.subdomain === name);
+        if (owner && owner.id !== siteId) return { name, available: false, reason: 'Este endereço já tem dono.' };
+        return { name, available: true, reason: '' };
+      }),
+
+    publish: (siteId, subdomain) =>
+      run(() => {
+        const site = siteOf(siteId, user().id);
+        subdomain = subdomain.toLowerCase();
+        const problem = subdomainProblem(subdomain) ?? (reserved.has(subdomain) ? 'Este endereço está reservado.' : null);
+        if (problem) fail(409, 'subdomain_unavailable', problem);
+        if (s.sites.some((x) => x.subdomain === subdomain && x.id !== site.id)) fail(409, 'subdomain_unavailable', 'Este endereço já tem dono.');
+        if (!site.current_version) fail(409, 'not_built', 'O site ainda não foi construído.');
+        site.subdomain = subdomain;
+        site.published_version = site.current_version;
+        site.published_at = iso();
+        return { url: `https://${subdomain}.faz.co.mz`, subdomain, version: site.current_version };
+      }),
+
+    job: (id) =>
+      run(() => {
+        const u = user();
+        const j = s.jobs.find((x) => x.id === id && x.user_id === u.id);
+        if (!j) fail(404, 'not_found', 'Não encontrado.');
+        return strip(j, 'user_id', 'site_id', 'payment_id', 'credits', 'request', 'structural', 'started', 'seconds', 'stages') as Job;
+      }),
+
+    topUp: ({ amount_mzn, msisdn, nuit }) =>
+      run(() => {
+        const u = user();
+        if (!Number.isInteger(amount_mzn) || amount_mzn < pricing.topup_min_mzn || amount_mzn > pricing.topup_max_mzn) {
+          fail(400, 'invalid_amount', `Escolhe um valor entre ${pricing.topup_min_mzn} e ${pricing.topup_max_mzn} MZN.`);
+        }
+        const phone = parsePhone(msisdn);
+        if (!phone.ok) fail(400, 'invalid_msisdn', 'Usa um número M-Pesa (84, 85) ou e-Mola (86, 87).');
+        if (nuit && !/^\d{9}$/.test(nuit)) fail(400, 'invalid_nuit', 'O NUIT tem 9 dígitos.');
+        const p = {
+          id: crypto.randomUUID(),
+          user_id: u.id,
+          method: phone.wallet,
+          msisdn: phone.msisdn,
+          amount_mzn,
+          vat_mzn: vatIncluded(amount_mzn),
+          credits: Math.floor(amount_mzn / pricing.mzn_per_credit),
+          nuit: nuit || undefined,
+          status: 'pending' as const,
+          provider: 'mock',
+          created_at: iso(),
+          updated_at: iso(),
+          settles_at: now() + paymentSeconds * 1000,
+        };
+        s.payments.push(p);
+        return strip(p, 'user_id', 'settles_at') as Payment;
+      }),
+
+    payments: () =>
+      run(() => {
+        const u = user();
+        return s.payments
+          .filter((p) => p.user_id === u.id)
+          .reverse()
+          .map((p) => strip(p, 'user_id', 'settles_at') as Payment);
+      }),
+
+    payment: (id) =>
+      run(() => {
+        const u = user();
+        const p = s.payments.find((x) => x.id === id && x.user_id === u.id);
+        if (!p) fail(404, 'not_found', 'Não encontrado.');
+        return strip(p, 'user_id', 'settles_at') as Payment;
+      }),
+  };
+}
+
+/** For tests and the "Limpar dados" button in mock mode. */
+export function resetMock() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* nothing stored */
+  }
+}

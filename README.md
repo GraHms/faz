@@ -79,6 +79,8 @@ Run the same briefs through both before deciding what Opus is worth for your cli
                                 Cloudflare R2  ◀── Worker serves nome.faz.co.mz from live/<nome>/index.html
 ```
 
+The web app lives in [`web/`](web/README.md): React, Vite and TypeScript, with a typed client for this API and an in-browser mock for UI work without the backend.
+
 One Go binary serves the API and runs the job workers; run several copies behind a load balancer and they share the queue. Builds and edits need Chrome, so fazd runs on a VM or container, not in Workers. Published sites are served by a Cloudflare Worker straight from R2.
 
 ### The customer flow
@@ -106,7 +108,7 @@ A build or edit that fails for good refunds its charge once, whatever retries ha
 | `GET /v1/sites/{id}/preview` | bearer | Presigned R2 URL for an iframe, 15 minutes |
 | `GET /v1/subdomains/{name}` | bearer | Availability and the reason when not |
 | `POST /v1/sites/{id}/publish` | bearer | `{subdomain}`; returns the live URL |
-| `GET /v1/jobs/{id}` | bearer | Poll a build or edit |
+| `GET /v1/jobs/{id}` | bearer | Poll a build or edit; `progress` names the stage it reached |
 | `POST /v1/payments`, `GET /v1/payments`, `GET /v1/payments/{id}` | bearer | `{amount_mzn, msisdn, nuit?}` |
 | `POST /v1/payments/callback/{provider}` | provider | Settlement webhook |
 
@@ -135,7 +137,7 @@ export FAZ_MOCK_PAYMENT_SECRET=dev-secret
 go run ./cmd/fazd
 ```
 
-Migrations run on start. The Worker: `cd worker && npm test`, then `npx wrangler deploy` once the R2 bucket and the `*.faz.co.mz` route exist.
+Migrations run on start. The web app: `cd web && npm install && npm run dev` (it proxies `/v1` to fazd). The Worker: `cd worker && npm test`, then `npx wrangler deploy` once the R2 bucket and the `*.faz.co.mz` route exist.
 
 ### Configuration
 
@@ -195,6 +197,7 @@ The default prices come from the prototype. By the estimates in the design doc, 
 ```sh
 go test ./...                     # pipeline, R2 signing, checks
 cd worker && npm test             # site Worker
+cd web && npm test                # web app; npm run e2e drives it in Chrome, see web/README.md
 
 # The product end to end: real Postgres and an S3 server
 FAZ_TEST_DATABASE_URL="postgres://faz:faz@127.0.0.1:5432/faz_test?sslmode=disable" \
