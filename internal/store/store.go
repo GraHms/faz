@@ -129,18 +129,21 @@ func jsonb(v any) ([]byte, error) {
 // ---- users and sessions ----
 
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	Name         string    `json:"name"`
-	PasswordHash string    `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID              string     `json:"id"`
+	Email           string     `json:"email"`
+	Name            string     `json:"name"`
+	PasswordHash    string     `json:"-"`
+	CreatedAt       time.Time  `json:"created_at"`
+	InviteCode      *string    `json:"invite_code,omitempty"`
+	SuspendedAt     *time.Time `json:"suspended_at,omitempty"`
+	SuspendedReason *string    `json:"suspended_reason,omitempty"`
 }
 
-const userCols = `id, email, name, password_hash, created_at`
+const userCols = `id, email, name, password_hash, created_at, invite_code, suspended_at, suspended_reason`
 
 func scanUser(r interface{ Scan(...any) error }) (User, error) {
 	var u User
-	err := r.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.CreatedAt)
+	err := r.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.CreatedAt, &u.InviteCode, &u.SuspendedAt, &u.SuspendedReason)
 	return u, notFound(err)
 }
 
@@ -167,7 +170,8 @@ func (s *Store) CreateSession(ctx context.Context, tokenHash []byte, userID stri
 }
 
 func (s *Store) UserBySession(ctx context.Context, tokenHash []byte) (User, error) {
-	return scanUser(s.DB.QueryRowContext(ctx, `SELECT u.id, u.email, u.name, u.password_hash, u.created_at
+	return scanUser(s.DB.QueryRowContext(ctx, `SELECT u.id, u.email, u.name, u.password_hash, u.created_at,
+		u.invite_code, u.suspended_at, u.suspended_reason
 		FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > now()`, tokenHash))
 }
 
@@ -250,16 +254,19 @@ type Site struct {
 	PublishedAt      *time.Time      `json:"published_at,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
+	// Set when Faz takes the site off the air; publishing is refused until restored.
+	TakenDownAt    *time.Time `json:"taken_down_at,omitempty"`
+	TakedownReason *string    `json:"takedown_reason,omitempty"`
 }
 
 const siteCols = `id, user_id, business_name, business_type, prompt, status, brief, answers, current_version,
-	published_version, subdomain, published_at, created_at, updated_at`
+	published_version, subdomain, published_at, created_at, updated_at, taken_down_at, takedown_reason`
 
 func scanSite(r interface{ Scan(...any) error }) (Site, error) {
 	var s Site
 	var brief, answers []byte
 	err := r.Scan(&s.ID, &s.UserID, &s.BusinessName, &s.BusinessType, &s.Prompt, &s.Status, &brief, &answers,
-		&s.CurrentVersion, &s.PublishedVersion, &s.Subdomain, &s.PublishedAt, &s.CreatedAt, &s.UpdatedAt)
+		&s.CurrentVersion, &s.PublishedVersion, &s.Subdomain, &s.PublishedAt, &s.CreatedAt, &s.UpdatedAt, &s.TakenDownAt, &s.TakedownReason)
 	s.Brief, s.Answers = brief, answers
 	return s, notFound(err)
 }
@@ -547,6 +554,7 @@ type JobView struct {
 	Status    string          `json:"status"`
 	Attempts  int             `json:"attempts"`
 	LastError *string         `json:"last_error,omitempty"`
+	Progress  *string         `json:"progress,omitempty"`
 	Result    json.RawMessage `json:"result,omitempty"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
@@ -556,11 +564,18 @@ type JobView struct {
 func (s *Store) Job(ctx context.Context, id int64, userID string) (JobView, error) {
 	var j JobView
 	var result []byte
-	err := s.DB.QueryRowContext(ctx, `SELECT id, kind, status, attempts, last_error, result, created_at, updated_at
+	err := s.DB.QueryRowContext(ctx, `SELECT id, kind, status, attempts, last_error, progress, result, created_at, updated_at
 		FROM jobs WHERE id = $1 AND payload->>'user_id' = $2`, id, userID).
-		Scan(&j.ID, &j.Kind, &j.Status, &j.Attempts, &j.LastError, &result, &j.CreatedAt, &j.UpdatedAt)
+		Scan(&j.ID, &j.Kind, &j.Status, &j.Attempts, &j.LastError, &j.Progress, &result, &j.CreatedAt, &j.UpdatedAt)
 	j.Result = result
 	return j, notFound(err)
+}
+
+// SetJobProgress records the stage a running job has reached, so the editor
+// can show real progress instead of a timer.
+func (s *Store) SetJobProgress(ctx context.Context, id int64, stage string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE jobs SET progress = $2 WHERE id = $1 AND status = 'running'`, id, stage)
+	return err
 }
 
 // ActiveJob reports whether a site has a queued or running job.
@@ -572,6 +587,8 @@ func (s *Store) ActiveJob(ctx context.Context, q Q, siteID string) (bool, error)
 
 // ---- model usage ----
 
+// Usage is one model call: what it was for, which model, its tokens, cost
+// and timing. Failed calls are recorded too; they are paid for.
 type Usage struct {
 	UserID       string
 	SiteID       *string
@@ -579,18 +596,24 @@ type Usage struct {
 	Operation    string
 	Stage        string
 	Model        string
+	Effort       string
+	Attempt      int
 	InputTokens  int
 	OutputTokens int
 	CacheRead    int
 	CacheWrite   int
 	CostUSD      float64
+	LatencyMS    int
+	Error        *string
 }
 
 func (s *Store) AddUsage(ctx context.Context, q Q, us []Usage) error {
 	for _, u := range us {
-		if _, err := q.ExecContext(ctx, `INSERT INTO model_usage (user_id, site_id, job_id, operation, stage, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-			u.UserID, u.SiteID, u.JobID, u.Operation, u.Stage, u.Model, u.InputTokens, u.OutputTokens, u.CacheRead, u.CacheWrite, u.CostUSD); err != nil {
+		if _, err := q.ExecContext(ctx, `INSERT INTO model_usage (user_id, site_id, job_id, operation, stage, model, effort, attempt,
+			input_tokens, output_tokens, cache_read, cache_write, cost_usd, latency_ms, error)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+			u.UserID, u.SiteID, u.JobID, u.Operation, u.Stage, u.Model, u.Effort, u.Attempt,
+			u.InputTokens, u.OutputTokens, u.CacheRead, u.CacheWrite, u.CostUSD, u.LatencyMS, u.Error); err != nil {
 			return err
 		}
 	}

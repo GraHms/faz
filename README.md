@@ -9,7 +9,7 @@ The pipeline turns a client's brief into a verified, single file web page. Seven
 
 ```
 brief.md ─▶ intake ─▶ content ─▶ plan ─▶ [plan checks] ─▶ critique ─▶ build
-             Haiku     Sonnet     Opus     contrast,        Opus        Sonnet
+             Sonnet    Sonnet     Opus     contrast,        Opus        Sonnet
                                            defaults,
                                            repeats
 build ─▶ [static checks + headless Chrome] ─▶ review ─▶ repair ─▶ [checks again] ─▶ index.html
@@ -50,7 +50,7 @@ Needs Go 1.24 and Chrome or Chromium on the machine for the render and review st
 
 | Stage | quality | economy |
 |---|---|---|
-| intake | Haiku 5.5, medium | Haiku 5.5, medium |
+| intake | Sonnet 5.5, medium | Sonnet 5.5, medium |
 | content | Sonnet 5.5, medium | Sonnet 5.5, medium |
 | plan | Opus 5.5, high | Sonnet 5.5, high |
 | critique | Opus 5.5, high | Sonnet 5.5, high |
@@ -59,6 +59,8 @@ Needs Go 1.24 and Chrome or Chromium on the machine for the render and review st
 | repair | Sonnet 5.5, medium | Sonnet 5.5, medium |
 | classify (product chat) | Haiku 5.5, low | Haiku 5.5, low |
 | edit (product chat) | Sonnet 5.5, low | Sonnet 5.5, low |
+
+Intake runs on Sonnet in both profiles, and twice per site in the product (the questions, then the build). It is not plain extraction: it reads the photos, picks the questions and writes the summary the owner confirms, so its mistakes reach every later stage. Classify stays on Haiku because every chat message waits on it and it only routes; check its charge decisions on real messages before launch.
 
 Run the same briefs through both before deciding what Opus is worth for your clients. Edit `internal/pipeline/profile.go` to add your own.
 
@@ -79,13 +81,15 @@ Run the same briefs through both before deciding what Opus is worth for your cli
                                 Cloudflare R2  ◀── Worker serves nome.faz.co.mz from live/<nome>/index.html
 ```
 
+The web app lives in [`web/`](web/README.md): React, Vite and TypeScript, with a typed client for this API and an in-browser mock for UI work without the backend.
+
 One Go binary serves the API and runs the job workers; run several copies behind a load balancer and they share the queue. Builds and edits need Chrome, so fazd runs on a VM or container, not in Workers. Published sites are served by a Cloudflare Worker straight from R2.
 
 ### The customer flow
 
 1. **Sign up**: the account gets the signup gift (19 credits by default).
-2. **Describe the business** (`POST /v1/sites`): Haiku reads the request and returns up to three clarifying questions. Free.
-3. **Answer or skip** (`POST /v1/sites/{id}/answers`): the first page is charged and a build job is queued. The full pipeline runs; every output goes to R2 as version 1.
+2. **Describe the business** (`POST /v1/sites`, JSON, or multipart with up to 8 photos): Sonnet reads the request and the photos and returns up to three clarifying questions, plus `understood`: two sentences saying what it understood (the business, who the page is for, what it must get visitors to do), which the owner can correct. It never asks for photos it was sent. Free.
+3. **Answer or skip** (`POST /v1/sites/{id}/answers`, with an optional `correction`): the first page is charged and a build job is queued. The build reads the answers and the correction next to what it corrects. The full pipeline runs; every output goes to R2 as version 1. If the build fails, the charge comes back and the answers stay stored, so a retry is one tap.
 4. **Chat** (`POST /v1/sites/{id}/messages`): Haiku classifies each message. Questions and vague requests get a free reply with quick options; clear edits are charged (5 credits, or 20 for structural changes) and queued. An edit that breaks the page gets one repair; if it is still broken, the old page stays and the credits come back.
 5. **Top up** (`POST /v1/payments`): M-Pesa (84, 85) or e-Mola (86, 87), at least 200 MZN, IVA included. The payment stays pending until the provider settles it, through `POST /v1/payments/callback/{provider}`.
 6. **Publish** (`POST /v1/sites/{id}/publish`): the current version is copied to `live/<subdomain>/index.html`, and the Worker serves it.
@@ -99,16 +103,26 @@ A build or edit that fails for good refunds its charge once, whatever retries ha
 | `POST /v1/auth/signup`, `POST /v1/auth/login` | none | Returns `{token, expires_at, account}` |
 | `POST /v1/auth/logout`, `GET /v1/me`, `GET /v1/credits` | bearer | Session, balance, ledger |
 | `GET /v1/pricing` | none | Current prices |
-| `POST /v1/sites`, `GET /v1/sites`, `GET /v1/sites/{id}` | bearer | Create (returns questions), list, editor view |
+| `POST /v1/sites`, `GET /v1/sites`, `GET /v1/sites/{id}` | bearer | Create (JSON or multipart with `file` photos; returns questions and `understood`), list, editor view |
 | `POST /v1/sites/{id}/assets` | bearer | Multipart `file`; JPEG, PNG or WebP, scaled to fit inline |
-| `POST /v1/sites/{id}/answers` | bearer | `{answers: {id: value}}` or `{skip: true}`; 202 with `job_id` |
+| `POST /v1/sites/{id}/answers` | bearer | `{answers: {id: value}}` or `{skip: true}`, plus an optional `correction`; 202 with `job_id` |
 | `POST /v1/sites/{id}/messages` | bearer | `{text}`; 200 with a free reply, or 202 with `job_id` when charged |
 | `GET /v1/sites/{id}/preview` | bearer | Presigned R2 URL for an iframe, 15 minutes |
 | `GET /v1/subdomains/{name}` | bearer | Availability and the reason when not |
 | `POST /v1/sites/{id}/publish` | bearer | `{subdomain}`; returns the live URL |
-| `GET /v1/jobs/{id}` | bearer | Poll a build or edit |
+| `GET /v1/jobs/{id}` | bearer | Poll a build or edit; `progress` names the stage it reached |
 | `POST /v1/payments`, `GET /v1/payments`, `GET /v1/payments/{id}` | bearer | `{amount_mzn, msisdn, nuit?}` |
 | `POST /v1/payments/callback/{provider}` | provider | Settlement webhook |
+| `GET /v1/config` | none | `{beta_required}`: whether sign up needs an invite code |
+| `GET /v1/admin/status`, `POST /v1/admin/settings` | admin key | Beta gate, model pause, daily spend cap, reserved names and blocked words |
+| `GET`/`POST /v1/admin/invites`, `POST /v1/admin/invites/{code}/disable` | admin key | Invite codes with uses, bonus credits and an end date |
+| `GET /v1/admin/users?q=`, `GET /v1/admin/users/{id}` | admin key | Find accounts by email, name or M-Pesa number; sites, ledger, payments and audit |
+| `POST /v1/admin/users/{id}/credits`, `/suspend`, `/sign-out` | admin key | Give or remove credits (`request_id` makes a repeat harmless), suspend, end sessions |
+| `POST /v1/admin/jobs/{id}/refund` | admin key | Return a build or edit's charge, once |
+| `GET /v1/admin/sites?q=`, `POST /v1/admin/sites/{id}/takedown`, `/restore` | admin key | Find sites; take one off the air and back |
+| `GET /v1/admin/audit` | admin key | Every admin action with operator and reason |
+| `GET /v1/admin/telemetry?from=&to=` | admin key | Spend in a period (inclusive UTC days, default the last 30): totals, by operation, stage and model, and per site |
+| `GET /v1/admin/sites/{id}/telemetry` | admin key | One site: every model call, grouped by operation, model and stage, with credits charged and margin |
 
 Errors are `{"error": {"code", "message", "details"}}` with messages in Portuguese, ready to show. `402 insufficient_credits` carries `needed` and `balance`, so the app can open the top up screen.
 
@@ -135,7 +149,7 @@ export FAZ_MOCK_PAYMENT_SECRET=dev-secret
 go run ./cmd/fazd
 ```
 
-Migrations run on start. The Worker: `cd worker && npm test`, then `npx wrangler deploy` once the R2 bucket and the `*.faz.co.mz` route exist.
+Migrations run on start. The web app: `cd web && npm install && npm run dev` (it proxies `/v1` to fazd). The Worker: `cd worker && npm test`, then `npx wrangler deploy` once the R2 bucket and the `*.faz.co.mz` route exist.
 
 ### Configuration
 
@@ -157,6 +171,8 @@ Migrations run on start. The Worker: `cd worker && npm test`, then `npx wrangler
 | `FAZ_CHROME`, `FAZ_CHROME_FLAGS`, `FAZ_NO_RENDER` | found on PATH | Render checks |
 | `FAZ_PASSWORD_ITERATIONS` | 600000 | PBKDF2 iterations |
 | `FAZ_DATA_DIR` | temp dir | Where the design history file lives |
+| `FAZ_ADMIN_TOKEN` | unset | Unlocks `/v1/admin` (header `X-Faz-Admin`) and the web app's `/admin` pages. At least 24 random characters; unset turns the routes off |
+| `FAZ_USD_MZN` | `64` | Rate used to show model spend in meticais |
 
 ### Security choices
 
@@ -165,9 +181,37 @@ Migrations run on start. The Worker: `cd worker && npm test`, then `npx wrangler
 - **Passwords** use PBKDF2 with SHA-256 at 600 000 iterations; sessions store only a SHA-256 of the token.
 - **Uploads** accept JPEG, PNG and WebP only. SVG is refused because it can carry scripts.
 
+### Operating Faz
+
+The web app's `/admin` pages and the `/v1/admin` routes are for whoever runs Faz. They need the admin key (`FAZ_ADMIN_TOKEN`, sent as `X-Faz-Admin`). Every write also names its operator (`X-Faz-Operator`) and gives a reason, and lands in an audit log that nothing deletes. That is the stand in for named operator accounts with 2FA, which come before a second operator does.
+
+- **Beta by invite code.** Close the beta in Controlo and sign up needs a live code. A code has a number of uses, optional bonus credits and an optional end date. Share it as a link, `/criar-conta?convite=CODE`, which fills the field. Codes avoid a waitlist because Faz cannot send email or SMS yet. A code typed by mistake is refused even when the beta is open, so nobody believes they got a bonus they did not.
+- **Credits.** Give or remove credits with a reason. The owner reads a neutral line ("Créditos oferecidos pela equipa Faz") or a note you write; the reason stays internal. A `request_id` makes a double click harmless, and a balance never goes below zero. Any build or edit can be refunded once, even if a failure already refunded it.
+- **Support.** Find an account by email, name or the M-Pesa or e-Mola number of any payment. Suspend it (it is signed out and cannot sign in; its sites stay up) or end its sessions (a lost phone).
+- **Sites.** Take a site off the air: the live page goes, the owner sees the reason in the editor, and publishing is refused until restored. The address stays with the site, so nobody can take it over. Restore puts the last published version back. Reserved names and blocked words extend the built in address rules for new addresses.
+- **Kill switches.** Pause the models by hand (a provider outage), or set a daily spend cap in dollars that pauses them on its own until midnight UTC. While paused, questions, builds and chat answer "em manutenção" and charge nothing; jobs already queued still run.
+
+Settings are cached for 5 seconds, so several fazd copies agree within that time.
+
+### Telemetry
+
+Every model call is stored in `model_usage`, failed calls and retries included, because they are paid for: the site, the job, the operation (`questions`, `build`, `classify`, `edit`), the stage, the model, the effort, the attempt, input, output and cache tokens, the cost in dollars and the latency.
+
+The admin API and the web app's `/admin` pages read it back:
+
+- **Per period:** model cost in dollars and meticais, credits charged without IVA, margin, calls, errors and tokens. Then a table by operation, stage and model with each row's share of the cost, and the sites, costliest first.
+- **Per site:** the same totals, with builds, edits, failures and build time. Then the spend by operation, by model and by stage (effort, retries, errors, tokens, cost, average latency), and every call in order.
+
+Read these numbers with two caveats:
+
+- **Costs are estimates.** They are made at call time from the price table in `internal/llm/cost.go`, which still needs checking against the pricing page. A later price change does not rewrite history.
+- **Gift credits count at list price.** Credits are valued without IVA, signup gift included, so a site built only with gift credits shows the value given away, not money received.
+
+The admin key is separate from accounts on purpose. Emails are not verified, so no account can be trusted to be the operator.
+
 ### Measure margins before launch
 
-Every model call is stored in `model_usage` with its cost in dollars. Compare it with what each operation charges:
+The telemetry pages show this per site. In SQL, compare spend with what each operation charges:
 
 ```sql
 SELECT operation,
@@ -183,7 +227,8 @@ The default prices come from the prototype. By the estimates in the design doc, 
 
 - **Job queue:** a small queue on Postgres (`FOR UPDATE SKIP LOCKED`) instead of River. River needs Go 1.26 and this was written with Go 1.24; the `jobs` package mirrors River's shape so the swap stays local.
 - **Payments:** only the mock exists. M-Pesa and e-Mola adapters implement `payments.Provider`.
-- **Not built yet:** domain search and registration, Google sign in, password reset, rate limiting.
+- **Custom domains: coming soon.** The app shows them as "Em breve" (pricing, domains page, publish dialog, "Ligar domínio" in the editor, the Domínios tab). The Worker can already serve a hostname mapped in `domains/<host>.json`, but nothing creates that mapping, registers domains or issues certificates for them yet; the plan is Cloudflare for SaaS custom hostnames.
+- **Not built yet:** Google sign in, password reset, owners unpublishing their own site, rate limiting, email or SMS to owners, named operator accounts with 2FA.
 - **Dockerfile untested:** it was not built in the authoring sandbox. Chromium's sandbox inside containers may need `--cap-add=SYS_ADMIN` or a seccomp profile. Prefer that to passing `--no-sandbox`, since the rendered HTML is model generated.
 
 ## Sample output
@@ -195,6 +240,7 @@ The default prices come from the prototype. By the estimates in the design doc, 
 ```sh
 go test ./...                     # pipeline, R2 signing, checks
 cd worker && npm test             # site Worker
+cd web && npm test                # web app; npm run e2e drives it in Chrome, see web/README.md
 
 # The product end to end: real Postgres and an S3 server
 FAZ_TEST_DATABASE_URL="postgres://faz:faz@127.0.0.1:5432/faz_test?sslmode=disable" \

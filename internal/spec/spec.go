@@ -14,11 +14,14 @@ import (
 
 // Brief is the intake stage's structured reading of the client's request.
 type Brief struct {
-	Language          string     `json:"language"`
-	PageKind          string     `json:"page_kind"`
-	Subject           string     `json:"subject"`
-	Audience          string     `json:"audience"`
-	PageJob           string     `json:"page_job"`
+	Language string `json:"language"`
+	PageKind string `json:"page_kind"`
+	Subject  string `json:"subject"`
+	Audience string `json:"audience"`
+	PageJob  string `json:"page_job"`
+	// Understood tells the client, in their language, what the intake
+	// understood, so they can correct it before anything is built.
+	Understood        string     `json:"understood"`
 	PrimaryAction     Action     `json:"primary_action"`
 	ProvidedFacts     []Fact     `json:"provided_facts"`
 	Brand             Brand      `json:"brand"`
@@ -88,6 +91,11 @@ func (b *Brief) Validate() error {
 	}
 	if strings.TrimSpace(b.PageJob) == "" {
 		errs = append(errs, "page_job is empty")
+	}
+	if strings.TrimSpace(b.Understood) == "" {
+		errs = append(errs, "understood is empty")
+	} else if n := len([]rune(b.Understood)); n > 500 {
+		errs = append(errs, fmt.Sprintf("understood has %d characters; keep it under 500", n))
 	}
 	if len(b.Questions) > 3 {
 		errs = append(errs, fmt.Sprintf("%d questions; ask at most 3", len(b.Questions)))

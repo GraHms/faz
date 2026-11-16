@@ -1,7 +1,7 @@
 // Package pipeline runs a brief through every stage, from intake to a
 // verified page, and writes each stage's output plus a report.
 //
-//	intake    Haiku   raw request  -> brief.json
+//	intake    Sonnet  raw request  -> brief.json
 //	content   Sonnet  brief        -> copy.json
 //	plan      Opus    brief, copy  -> plan.draft.json
 //	(checks)  Go      contrast, generic defaults, repeats of recent work
@@ -50,6 +50,9 @@ type Options struct {
 	InlineMax    int64          // largest asset inlined as a data URI; default 1 MB
 	StageTimeout time.Duration  // default 15 minutes
 	Log          io.Writer
+	// OnStage, when set, is told each time a stage starts: a model stage
+	// name, or "verify" for the rendered checks. It must return quickly.
+	OnStage func(stage string)
 }
 
 // Pipeline holds a model client and options for one run.
@@ -394,6 +397,7 @@ func (p *Pipeline) passes(plan *spec.Plan) []pass {
 }
 
 func (p *Pipeline) verify(ctx context.Context, b *spec.Brief, c *spec.Copy, plan *spec.Plan, page, phase string, shots bool) ([]check.Finding, []shot, error) {
+	p.started("verify")
 	findings := check.Static(page, plan, c)
 	if p.Opt.Chrome == nil {
 		return findings, nil, nil
@@ -505,7 +509,15 @@ func (p *Pipeline) decideStatus(review *spec.Review) {
 
 // ---- helpers ----
 
+// started tells OnStage that a stage began.
+func (p *Pipeline) started(stage string) {
+	if p.Opt.OnStage != nil {
+		p.Opt.OnStage(stage)
+	}
+}
+
 func (p *Pipeline) call(ctx context.Context, stage string, parts []llm.Part, attempt int) (llm.Response, error) {
+	p.started(stage)
 	cfg := p.Opt.Profile[stage]
 	system, err := prompts.Load(stage, p.Opt.PromptDir)
 	if err != nil {

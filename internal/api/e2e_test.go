@@ -42,6 +42,24 @@ func (f *failingBuild) Complete(ctx context.Context, r llm.Request) (llm.Respons
 	return f.Client.Complete(ctx, r)
 }
 
+const adminToken = "test-admin-token-0123456789"
+
+func (h *harness) admin(path, key string, out any) int {
+	req, _ := http.NewRequest("GET", h.srv.URL+path, nil)
+	if key != "" {
+		req.Header.Set("X-Faz-Admin", key)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if out != nil {
+		json.NewDecoder(resp.Body).Decode(out)
+	}
+	return resp.StatusCode
+}
+
 type harness struct {
 	t      *testing.T
 	srv    *httptest.Server
@@ -129,13 +147,13 @@ func setup(t *testing.T) *harness {
 		Pricing: product.DefaultPricing, Profile: pipeline.Profiles["quality"], ProfileName: "quality",
 		SitesDomain: "faz.co.mz", Chrome: chrome, PasswordIterations: 1000,
 	}}
-	srv := httptest.NewServer((&api.Server{Svc: svc}).Handler())
+	srv := httptest.NewServer((&api.Server{Svc: svc, AdminToken: adminToken}).Handler())
 	t.Cleanup(srv.Close)
 	return &harness{t: t, srv: srv, svc: svc, model: model,
 		worker: &jobs.Worker{DB: db.DB, ID: "test", Handlers: svc.Handlers(), OnFailed: svc.OnJobFailed}}
 }
 
-func pngUpload(t *testing.T) (*bytes.Buffer, string) {
+func pngUpload(t *testing.T, fields map[string]string) (*bytes.Buffer, string) {
 	img := image.NewRGBA(image.Rect(0, 0, 2400, 1800))
 	for y := 0; y < 1800; y++ {
 		for x := 0; x < 2400; x++ {
@@ -144,12 +162,50 @@ func pngUpload(t *testing.T) (*bytes.Buffer, string) {
 	}
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		w.WriteField(k, v)
+	}
 	part, _ := w.CreateFormFile("file", "Colmeias Lichinga.PNG")
 	if err := png.Encode(part, img); err != nil {
 		t.Fatal(err)
 	}
 	w.Close()
 	return &buf, w.FormDataContentType()
+}
+
+func (h *harness) multipart(path, token string, body *bytes.Buffer, ctype string, out any) int {
+	req, _ := http.NewRequest("POST", h.srv.URL+path, body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", ctype)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if out != nil {
+		json.NewDecoder(resp.Body).Decode(out)
+	}
+	return resp.StatusCode
+}
+
+// intakeCalls returns what each intake call sent the model: its text and
+// how many images it carried.
+func (h *harness) intakeCalls() (texts []string, images []int) {
+	for _, c := range h.model.Client.(*llm.Fake).Calls {
+		if c.Stage != "intake" {
+			continue
+		}
+		var text strings.Builder
+		n := 0
+		for _, p := range c.Parts {
+			text.WriteString(p.Text)
+			if len(p.Image) > 0 {
+				n++
+			}
+		}
+		texts, images = append(texts, text.String()), append(images, n)
+	}
+	return texts, images
 }
 
 func TestProductEndToEnd(t *testing.T) {
@@ -175,30 +231,32 @@ func TestProductEndToEnd(t *testing.T) {
 		t.Fatalf("bad token: %d", code)
 	}
 
-	// Questions before the first build, free.
+	// Questions before the first build, free. The photo comes with the
+	// request, so the questions are written with it in view.
 	var site product.SiteView
-	if code := h.call("POST", "/v1/sites", tok, map[string]string{"prompt": string(brief), "business_name": "Cooperativa Apícola de Lichinga", "business_type": "Loja"}, &site); code != 201 {
+	body, ctype := pngUpload(t, map[string]string{"prompt": string(brief), "business_name": "Cooperativa Apícola de Lichinga", "business_type": "Loja"})
+	if code := h.multipart("/v1/sites", tok, body, ctype, &site); code != 201 {
 		t.Fatalf("create site: %d", code)
 	}
 	id := site.Site.ID
 	if site.Site.Status != "questions" || len(site.Questions) != 3 || h.balance(tok) != 19 {
 		t.Fatalf("site after create: status %s, %d questions, balance %d", site.Site.Status, len(site.Questions), h.balance(tok))
 	}
-
-	// A large photo is scaled down to fit inline.
-	body, ctype := pngUpload(t)
-	req, _ := http.NewRequest("POST", h.srv.URL+"/v1/sites/"+id+"/assets", body)
-	req.Header.Set("Authorization", "Bearer "+tok)
-	req.Header.Set("Content-Type", ctype)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
+	if !strings.HasPrefix(site.Understood, "Percebi que") {
+		t.Errorf("understood %q", site.Understood)
 	}
+	if len(site.Assets) != 1 || site.Assets[0].Name != "colmeias-lichinga.jpg" || site.Assets[0].Size > 900_000 {
+		t.Fatalf("photo sent with the site: %+v", site.Assets)
+	}
+	if texts, images := h.intakeCalls(); len(texts) != 1 || images[0] != 1 || !strings.Contains(texts[0], "colmeias-lichinga.jpg") {
+		t.Fatalf("intake did not see the photo: %d calls, images %v", len(texts), images)
+	}
+
+	// A photo added later is scaled down too.
+	body, ctype = pngUpload(t, nil)
 	var asset store.Asset
-	json.NewDecoder(resp.Body).Decode(&asset)
-	resp.Body.Close()
-	if resp.StatusCode != 201 || asset.Name != "colmeias-lichinga.jpg" || asset.Size > 900_000 {
-		t.Fatalf("upload: %d %+v", resp.StatusCode, asset)
+	if code := h.multipart("/v1/sites/"+id+"/assets", tok, body, ctype, &asset); code != 201 || asset.Name != "colmeias-lichinga.jpg" || asset.Size > 900_000 {
+		t.Fatalf("upload: %d %+v", code, asset)
 	}
 
 	// Answers are validated, then the first page is charged and queued.
@@ -208,7 +266,8 @@ func TestProductEndToEnd(t *testing.T) {
 	var queued struct {
 		JobID int64 `json:"job_id"`
 	}
-	if code := h.call("POST", "/v1/sites/"+id+"/answers", tok, map[string]any{"answers": map[string]string{"entrega": "50 MT", "fotos": "sim", "sentir": "rotulo"}}, &queued); code != 202 || queued.JobID == 0 {
+	correction := "É para revendedores também, não só famílias."
+	if code := h.call("POST", "/v1/sites/"+id+"/answers", tok, map[string]any{"answers": map[string]string{"entrega": "50 MT", "fotos": "sim", "sentir": "rotulo"}, "correction": correction}, &queued); code != 202 || queued.JobID == 0 {
 		t.Fatalf("answers: %d", code)
 	}
 	if b := h.balance(tok); b != 0 {
@@ -221,6 +280,16 @@ func TestProductEndToEnd(t *testing.T) {
 	h.drain()
 	if code := h.call("GET", "/v1/sites/"+id, tok, nil, &site); code != 200 || site.Site.Status != "ready" || site.Site.CurrentVersion != 1 {
 		t.Fatalf("after build: %d %+v", code, site.Site)
+	}
+	var job store.JobView
+	if code := h.call("GET", fmt.Sprintf("/v1/jobs/%d", queued.JobID), tok, nil, &job); code != 200 || job.Status != "succeeded" || job.Progress == nil {
+		t.Fatalf("build job: %d %+v", code, job)
+	}
+	// The build read the answers and the correction, next to what it corrects.
+	texts, images := h.intakeCalls()
+	if build := texts[len(texts)-1]; len(texts) != 2 || images[1] != 1 || !strings.Contains(build, "50 MT") ||
+		!strings.Contains(build, correction) || !strings.Contains(build, site.Understood) && !strings.Contains(build, "Percebi que") {
+		t.Fatalf("build intake input:\n%s", build)
 	}
 	last := site.Messages[len(site.Messages)-1]
 	if !strings.Contains(last.Text, "2 informações") {
@@ -335,7 +404,7 @@ func TestProductEndToEnd(t *testing.T) {
 	// A build that keeps failing refunds the charge and reopens the questions.
 	var site2 product.SiteView
 	h.call("POST", "/v1/sites", other.Token, map[string]string{"prompt": string(brief), "business_name": "Mel Dois", "business_type": "Loja"}, &site2)
-	h.call("POST", "/v1/sites/"+site2.Site.ID+"/answers", other.Token, map[string]any{"skip": true}, nil)
+	h.call("POST", "/v1/sites/"+site2.Site.ID+"/answers", other.Token, map[string]any{"answers": map[string]string{"sentir": "rotulo"}, "correction": "Só vendemos em Maputo."}, nil)
 	if b := h.balance(other.Token); b != 0 {
 		t.Fatalf("second customer after charge: %d", b)
 	}
@@ -353,11 +422,81 @@ func TestProductEndToEnd(t *testing.T) {
 	if last := site2.Messages[len(site2.Messages)-1]; !strings.Contains(last.Text, "créditos foram devolvidos") {
 		t.Errorf("failure message %q", last.Text)
 	}
+	// The answers survive the failure, so the owner can retry in one tap.
+	var kept map[string]string
+	json.Unmarshal(site2.Site.Answers, &kept)
+	if kept["sentir"] == "" || kept[product.CorrectionKey] != "Só vendemos em Maputo." || site2.Understood == "" || len(site2.Questions) != 3 {
+		t.Fatalf("after failed build: answers %v, understood %q, %d questions", kept, site2.Understood, len(site2.Questions))
+	}
 
 	// Margins are measurable: every stage's spend is recorded.
 	cost, err := h.svc.Store.SiteCost(context.Background(), id)
 	if err != nil || cost <= 0 {
 		t.Fatalf("site cost %v %v", cost, err)
+	}
+
+	// Telemetry: per site and per period, only with the admin key.
+	if code := h.admin("/v1/admin/sites/"+id+"/telemetry", "", nil); code != 401 {
+		t.Fatalf("telemetry without the admin key: %d", code)
+	}
+	if code := h.admin("/v1/admin/sites/"+id+"/telemetry", "wrong", nil); code != 401 {
+		t.Fatalf("telemetry with a wrong key: %d", code)
+	}
+	if code := h.call("GET", "/v1/admin/sites/"+id+"/telemetry", tok, nil, nil); code != 401 {
+		t.Fatalf("a customer token is not an admin key: %d", code)
+	}
+	var tel product.SiteTelemetry
+	if code := h.admin("/v1/admin/sites/"+id+"/telemetry", adminToken, &tel); code != 200 {
+		t.Fatalf("telemetry: %d", code)
+	}
+	var rows int
+	h.svc.Store.DB.QueryRow(`SELECT COUNT(*) FROM model_usage WHERE site_id = $1`, id).Scan(&rows)
+	if tel.Totals.Calls != rows || len(tel.Calls) != rows || tel.OwnerEmail != "ana@exemplo.co.mz" {
+		t.Fatalf("telemetry calls %d (%d listed), rows %d, owner %q", tel.Totals.Calls, len(tel.Calls), rows, tel.OwnerEmail)
+	}
+	if d := tel.Totals.CostUSD - cost; d > 1e-6 || d < -1e-6 {
+		t.Fatalf("telemetry cost %f, ledger of usage %f", tel.Totals.CostUSD, cost)
+	}
+	seen := map[string]product.StageTelemetry{}
+	var stageSum float64
+	for _, st := range tel.ByStage {
+		seen[st.Operation+"/"+st.Stage] = st
+		stageSum += st.CostUSD
+		if st.Model == "" || st.Effort == "" || st.InputTokens <= 0 || st.OutputTokens <= 0 {
+			t.Errorf("stage without detail: %+v", st)
+		}
+	}
+	for _, want := range []string{"questions/intake", "build/intake", "build/content", "build/plan", "build/critique", "build/build", "classify/classify", "edit/edit"} {
+		if _, ok := seen[want]; !ok {
+			t.Errorf("telemetry is missing %s; has %v", want, seen)
+		}
+	}
+	if m := seen["questions/intake"].Model; m != pipeline.Sonnet {
+		t.Errorf("intake ran on %s", m)
+	}
+	if m := seen["build/plan"].Model; m != pipeline.Opus {
+		t.Errorf("plan ran on %s", m)
+	}
+	if d := stageSum - tel.Totals.CostUSD; d > 1e-6 || d < -1e-6 {
+		t.Errorf("stages add up to %f, total %f", stageSum, tel.Totals.CostUSD)
+	}
+	if tel.Money.CreditsCharged < 19 || tel.Money.CostMZN != float64(int64(tel.Totals.CostUSD*product.DefaultUSDToMZN*100+0.5))/100 {
+		t.Errorf("money %+v", tel.Money)
+	}
+	if tel.Jobs.Builds != 1 || tel.Jobs.Edits < 1 {
+		t.Errorf("jobs %+v", tel.Jobs)
+	}
+	var ov product.Overview
+	if code := h.admin("/v1/admin/telemetry", adminToken, &ov); code != 200 || len(ov.Sites) == 0 || ov.Totals.CostUSD < tel.Totals.CostUSD {
+		t.Fatalf("overview: %d %+v", code, ov.Totals)
+	}
+	if code := h.admin("/v1/admin/telemetry?from=2026-13-01", adminToken, nil); code != 400 {
+		t.Errorf("bad period: %d", code)
+	}
+	rec := httptest.NewRecorder()
+	(&api.Server{Svc: h.svc}).Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/v1/admin/telemetry", nil))
+	if rec.Code != 404 {
+		t.Errorf("admin routes must not exist without FAZ_ADMIN_TOKEN: %d", rec.Code)
 	}
 	var ledgerSum int
 	h.svc.Store.DB.QueryRow(`SELECT COALESCE(SUM(delta),0) FROM credit_ledger WHERE user_id = $1`, sess.Account.User.ID).Scan(&ledgerSum)

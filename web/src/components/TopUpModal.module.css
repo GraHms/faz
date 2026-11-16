@@ -1,0 +1,78 @@
+.balance {
+  font-size: var(--text-md);
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.balance strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.packs {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.pack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+.pack:hover {
+  border-color: var(--line-3);
+}
+.pack:has(input:checked) {
+  border-color: var(--text);
+  background: var(--surface-2);
+}
+.pack input {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-3);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.pack input:checked {
+  border-color: var(--text);
+}
+.pack input:checked::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.pack input:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.packBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.packAmount {
+  font-weight: 500;
+}
+.packNote {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.note {
+  margin-top: 12px;
+  font-size: var(--text-sm);
+  color: var(--dim);
+}

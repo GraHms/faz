@@ -61,6 +61,7 @@ type Config struct {
 	PasswordIterations int
 	SessionTTL         time.Duration
 	PreviewTTL         time.Duration
+	USDToMZN           float64 // converts model spend for telemetry; DefaultUSDToMZN when 0
 }
 
 // Service is the product.
@@ -71,6 +72,8 @@ type Service struct {
 	Pay   payments.Provider
 	Cfg   Config
 	Log   *slog.Logger
+
+	settings settingsCache
 }
 
 // Error is a failure the API shows to the customer.
@@ -127,8 +130,14 @@ func (s *Service) recordUsage(ctx context.Context, q store.Q, rep *pipeline.Repo
 	}
 	var us []store.Usage
 	for _, st := range rep.Stages {
-		us = append(us, store.Usage{UserID: userID, SiteID: siteID, JobID: jobID, Operation: op, Stage: st.Stage, Model: st.Model,
-			InputTokens: st.InputTokens, OutputTokens: st.OutputTokens, CacheRead: st.CacheRead, CacheWrite: st.CacheWrite, CostUSD: st.CostUSD})
+		u := store.Usage{UserID: userID, SiteID: siteID, JobID: jobID, Operation: op, Stage: st.Stage, Model: st.Model,
+			Effort: st.Effort, Attempt: max(st.Attempt, 1), LatencyMS: int(st.Seconds * 1000),
+			InputTokens: st.InputTokens, OutputTokens: st.OutputTokens, CacheRead: st.CacheRead, CacheWrite: st.CacheWrite, CostUSD: st.CostUSD}
+		if st.Error != "" {
+			msg := st.Error
+			u.Error = &msg
+		}
+		us = append(us, u)
 	}
 	if err := s.Store.AddUsage(ctx, q, us); err != nil {
 		s.log().Error("record usage", "err", err)

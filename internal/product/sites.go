@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GraHms/faz/internal/assets"
 	"github.com/GraHms/faz/internal/jobs"
 	"github.com/GraHms/faz/internal/payments"
 	"github.com/GraHms/faz/internal/pipeline"
@@ -30,11 +31,14 @@ const (
 type SiteView struct {
 	Site      store.Site      `json:"site"`
 	Questions []spec.Question `json:"questions,omitempty"`
-	Messages  []store.Message `json:"messages"`
-	Versions  []store.Version `json:"versions"`
-	Assets    []store.Asset   `json:"assets"`
-	LiveURL   string          `json:"live_url,omitempty"`
-	Busy      bool            `json:"busy"`
+	// Understood is what the intake understood, shown with the questions so
+	// the owner can correct it before paying for the build.
+	Understood string          `json:"understood,omitempty"`
+	Messages   []store.Message `json:"messages"`
+	Versions   []store.Version `json:"versions"`
+	Assets     []store.Asset   `json:"assets"`
+	LiveURL    string          `json:"live_url,omitempty"`
+	Busy       bool            `json:"busy"`
 }
 
 func (s *Service) siteBrief(site store.Site) (*spec.Brief, error) {
@@ -45,27 +49,58 @@ func (s *Service) siteBrief(site store.Site) (*spec.Brief, error) {
 	return &b, json.Unmarshal(site.Brief, &b)
 }
 
+// CorrectionKey holds, among a site's stored answers, the owner's
+// correction to what the intake understood. Question ids never start with _.
+const CorrectionKey = "_correction"
+
 // composeBrief writes the text the intake stage reads: the business, the
-// owner's request, and their answers to the questions.
-func composeBrief(site store.Site, qs []spec.Question, answers map[string]string) string {
+// owner's request, their answers to the questions, and their correction to
+// what the first intake understood. brief is nil before the first intake.
+func composeBrief(site store.Site, brief *spec.Brief, answers map[string]string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Negócio: %s\nTipo de negócio: %s\n\nPedido do cliente:\n%s\n", site.BusinessName, site.BusinessType, site.Prompt)
-	if len(answers) == 0 {
+	if brief == nil {
 		return b.String()
 	}
-	b.WriteString("\nRespostas do cliente às perguntas:\n")
-	for _, q := range qs {
-		if a, ok := answers[q.ID]; ok && a != "" {
+	wrote := false
+	for _, q := range brief.Questions {
+		if a := answers[q.ID]; a != "" {
+			if !wrote {
+				b.WriteString("\nRespostas do cliente às perguntas:\n")
+				wrote = true
+			}
 			fmt.Fprintf(&b, "- %s %s\n", q.Text, a)
 		}
+	}
+	if c := answers[CorrectionKey]; c != "" {
+		fmt.Fprintf(&b, "\nO que dissemos ao cliente que percebemos:\n%s\n\nA correcção do cliente, que manda sobre o pedido e o resumo:\n%s\n", brief.Understood, c)
 	}
 	return b.String()
 }
 
-// CreateSite reads the owner's request and returns the clarifying
-// questions. Nothing is charged: the questions cost one small Haiku call.
-func (s *Service) CreateSite(ctx context.Context, u store.User, prompt, businessName, businessType string) (*SiteView, error) {
-	prompt, businessName, businessType = clean(prompt), clean(businessName), clean(businessType)
+// Upload is a file sent with a request, before it is checked.
+type Upload struct {
+	Name string
+	Data []byte
+}
+
+// NewSite is what the owner sends to start a site. Photos come with the
+// request so the questions can take them into account.
+type NewSite struct {
+	Prompt       string
+	BusinessName string
+	BusinessType string
+	Files        []Upload
+}
+
+// MaxNewSiteFiles caps the photos sent with a new site; more can be added later.
+const MaxNewSiteFiles = 8
+
+// CreateSite reads the owner's request and its photos and returns the
+// clarifying questions with what was understood. Nothing is charged: this is
+// one Sonnet call.
+func (s *Service) CreateSite(ctx context.Context, u store.User, in NewSite) (*SiteView, error) {
+	prompt, businessName, businessType := clean(in.Prompt), clean(in.BusinessName), clean(in.BusinessType)
 	switch {
 	case len([]rune(prompt)) < 10 || len([]rune(prompt)) > 4000:
 		return nil, badRequest("invalid_prompt", "Descreve o site em 10 a 4000 caracteres.")
@@ -73,6 +108,32 @@ func (s *Service) CreateSite(ctx context.Context, u store.User, prompt, business
 		return nil, badRequest("invalid_business_name", "Escreve o nome do negócio.")
 	case len([]rune(businessType)) > 40:
 		return nil, badRequest("invalid_business_type", "O tipo de negócio é demasiado longo.")
+	}
+	if err := s.modelsOpen(ctx); err != nil {
+		return nil, err
+	}
+	if len(in.Files) > MaxNewSiteFiles {
+		return nil, badRequest("too_many_files", fmt.Sprintf("Envia até %d fotos agora; podes juntar mais depois.", MaxNewSiteFiles))
+	}
+	// Photos are checked and scaled before the intake, so it sees what the
+	// site will use and does not ask for photos it already has.
+	var photos []assets.Asset
+	seen := map[string]int{}
+	for _, f := range in.Files {
+		if len(f.Data) == 0 || len(f.Data) > 15<<20 {
+			return nil, &Error{Status: http.StatusRequestEntityTooLarge, Code: "file_too_large", Message: "Envia imagens até 15 MB."}
+		}
+		name, body, mediaType, err := prepareImage(f.Name, f.Data)
+		if err != nil {
+			return nil, badRequest("unsupported_image", err.Error())
+		}
+		a := assets.Asset{Name: name, MediaType: mediaType, Size: int64(len(body)), Data: body}
+		if i, ok := seen[name]; ok {
+			photos[i] = a
+			continue
+		}
+		seen[name] = len(photos)
+		photos = append(photos, a)
 	}
 	draft := store.Site{UserID: u.ID, BusinessName: businessName, BusinessType: businessType, Prompt: prompt, Status: "questions"}
 
@@ -82,6 +143,7 @@ func (s *Service) CreateSite(ctx context.Context, u store.User, prompt, business
 	}
 	defer done()
 	p := s.pipe(dir, composeBrief(draft, nil, nil))
+	p.Opt.Assets = photos
 	brief, err := p.Intake(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("questions: %w", err)
@@ -100,6 +162,13 @@ func (s *Service) CreateSite(ctx context.Context, u store.User, prompt, business
 	if err != nil {
 		return nil, err
 	}
+	// The site exists now, so a photo that fails to store is logged rather
+	// than failing the request; the view lists the photos that made it.
+	for _, a := range photos {
+		if err := s.storeAsset(ctx, site.ID, a.Name, a.Data, a.MediaType); err != nil {
+			s.log().Error("store photo sent with new site", "site", site.ID, "photo", a.Name, "err", err)
+		}
+	}
 	return s.GetSite(ctx, u, site.ID)
 }
 
@@ -111,7 +180,7 @@ func (s *Service) GetSite(ctx context.Context, u store.User, id string) (*SiteVi
 	}
 	v := &SiteView{Site: site, Messages: []store.Message{}, Versions: []store.Version{}, Assets: []store.Asset{}}
 	if b, err := s.siteBrief(site); err == nil && site.Status == "questions" {
-		v.Questions = b.Questions
+		v.Questions, v.Understood = b.Questions, b.Understood
 	}
 	if m, err := s.Store.Messages(ctx, id, 100); err == nil && m != nil {
 		v.Messages = m
@@ -138,10 +207,19 @@ func (s *Service) ListSites(ctx context.Context, u store.User) ([]store.Site, er
 	return sites, err
 }
 
-// Answer records the answers (or a skip), charges the first page and queues
-// the build. Answers are keyed by question id; multi choice answers are
-// comma separated values.
-func (s *Service) Answer(ctx context.Context, u store.User, siteID string, answers map[string]string, skip bool) (int64, error) {
+// Answer records the answers (or a skip) and the owner's correction to what
+// was understood, charges the first page and queues the build. Answers are
+// keyed by question id; multi choice answers are comma separated values.
+// They stay stored if the build fails, so the owner can retry without
+// answering again.
+func (s *Service) Answer(ctx context.Context, u store.User, siteID string, answers map[string]string, skip bool, correction string) (int64, error) {
+	correction = clean(correction)
+	if len([]rune(correction)) > 1000 {
+		return 0, badRequest("correction_too_long", "Escreve a correcção em até 1000 caracteres.")
+	}
+	if err := s.modelsOpen(ctx); err != nil {
+		return 0, err
+	}
 	var jobID int64
 	err := s.Store.Tx(ctx, func(tx *sql.Tx) error {
 		site, err := s.Store.LockSite(ctx, tx, siteID, u.ID)
@@ -160,6 +238,9 @@ func (s *Service) Answer(ctx context.Context, u store.User, siteID string, answe
 			if labeled, err = labelAnswers(brief.Questions, answers); err != nil {
 				return err
 			}
+		}
+		if correction != "" {
+			labeled[CorrectionKey] = correction
 		}
 		if err := s.Store.SetSiteAnswers(ctx, tx, site.ID, labeled); err != nil {
 			return err
@@ -246,6 +327,9 @@ func (s *Service) SendMessage(ctx context.Context, u store.User, siteID, text st
 	}
 	if site.CurrentVersion == 0 || site.Status != "ready" {
 		return nil, conflict("site_busy", "Espera que o site termine a alteração em curso.")
+	}
+	if err := s.modelsOpen(ctx); err != nil {
+		return nil, err
 	}
 	ver, err := s.Store.Version(ctx, site.ID, site.CurrentVersion)
 	if err != nil {
@@ -384,6 +468,20 @@ func (s *Service) Availability(ctx context.Context, name, forSiteID string) (boo
 	case reservedSubdomains[name]:
 		return false, "Este endereço está reservado.", nil
 	}
+	settings, err := s.Settings(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	for _, r := range settings.ReservedNames {
+		if name == r {
+			return false, "Este endereço está reservado.", nil
+		}
+	}
+	for _, w := range settings.BlockedWords {
+		if strings.Contains(name, w) {
+			return false, "Este endereço não é permitido. Escolhe outro.", nil
+		}
+	}
 	owner, err := s.Store.SubdomainOwner(ctx, name)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && owner == forSiteID) {
 		return true, "", nil
@@ -416,6 +514,10 @@ func (s *Service) Publish(ctx context.Context, u store.User, siteID, subdomain s
 		}
 		if site.CurrentVersion == 0 {
 			return conflict("not_built", "O site ainda não foi construído.")
+		}
+		if site.TakenDownAt != nil {
+			return &Error{Status: http.StatusForbidden, Code: "site_taken_down",
+				Message: "Este site foi retirado do ar pela equipa Faz e não pode ser publicado. Fala connosco."}
 		}
 		if site.Subdomain != nil && *site.Subdomain != subdomain {
 			old = *site.Subdomain
@@ -463,14 +565,18 @@ func (s *Service) UploadAsset(ctx context.Context, u store.User, siteID, filenam
 	if err != nil {
 		return nil, badRequest("unsupported_image", err.Error())
 	}
+	if err := s.storeAsset(ctx, siteID, name, body, mediaType); err != nil {
+		return nil, err
+	}
+	return &store.Asset{SiteID: siteID, Name: name, MediaType: mediaType, Size: int64(len(body))}, nil
+}
+
+// storeAsset writes a prepared photo to R2 and lists it on the site.
+func (s *Service) storeAsset(ctx context.Context, siteID, name string, body []byte, mediaType string) error {
 	if err := s.R2.Put(ctx, "sites/"+siteID+"/assets/"+name, body, mediaType, ""); err != nil {
-		return nil, err
+		return err
 	}
-	a := store.Asset{SiteID: siteID, Name: name, MediaType: mediaType, Size: int64(len(body))}
-	if err := s.Store.UpsertAsset(ctx, a); err != nil {
-		return nil, err
-	}
-	return &a, nil
+	return s.Store.UpsertAsset(ctx, store.Asset{SiteID: siteID, Name: name, MediaType: mediaType, Size: int64(len(body))})
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }

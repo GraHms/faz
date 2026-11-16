@@ -110,6 +110,13 @@ func run(log *slog.Logger) error {
 		HistoryPath: filepath.Join(dataDir, "history.jsonl"), SitesDomain: env("FAZ_SITES_DOMAIN", "faz.co.mz"),
 		Chrome: chrome, PasswordIterations: integer("FAZ_PASSWORD_ITERATIONS", 0),
 	}}
+	if v, err := strconv.ParseFloat(env("FAZ_USD_MZN", "0"), 64); err == nil && v > 0 {
+		svc.Cfg.USDToMZN = v
+	}
+	adminToken := env("FAZ_ADMIN_TOKEN", "")
+	if adminToken != "" && len(adminToken) < 24 {
+		return fmt.Errorf("FAZ_ADMIN_TOKEN is too short; use at least 24 random characters")
+	}
 
 	workers := integer("FAZ_WORKERS", 2)
 	for i := 0; i < workers; i++ {
@@ -123,7 +130,7 @@ func run(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              env("FAZ_HTTP_ADDR", ":8080"),
-		Handler:           (&api.Server{Svc: svc, AppOrigins: strings.Fields(env("FAZ_APP_ORIGINS", "")), Log: log}).Handler(),
+		Handler:           (&api.Server{Svc: svc, AppOrigins: strings.Fields(env("FAZ_APP_ORIGINS", "")), Log: log, AdminToken: adminToken}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,

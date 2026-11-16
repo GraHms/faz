@@ -1,0 +1,440 @@
+.page {
+  min-height: 100dvh;
+}
+.header {
+  border-bottom: 1px solid var(--line);
+}
+.bar {
+  max-width: 1280px;
+  margin: 0 auto;
+  height: 56px;
+  padding: 0 var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slash {
+  color: var(--line-2);
+  font-size: 20px;
+  font-weight: 300;
+}
+.title {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+.grow {
+  flex: 1;
+}
+.main {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px var(--gutter) 80px;
+}
+.gate {
+  max-width: 400px;
+  margin: 64px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.h1 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+}
+.h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.head p {
+  margin-top: 4px;
+  font-size: var(--text-md);
+}
+.crumbs {
+  font-size: var(--text-md);
+  color: var(--dim);
+  margin-bottom: 12px;
+}
+.crumbs a {
+  color: var(--muted);
+}
+.periods {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.periods button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+.periods button[aria-pressed='true'] {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.loading {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+}
+.empty {
+  margin-top: 24px;
+  padding: 32px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-lg);
+  text-align: center;
+  color: var(--muted);
+}
+
+/* KPI row: stat tiles, no plot. Proportional figures at display size. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.tile {
+  background: var(--bg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tileLabel {
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+.tileValue {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tileNote {
+  font-size: var(--text-sm);
+  color: var(--dim);
+}
+.jobs {
+  margin-top: 12px;
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+.section {
+  margin-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.twoCols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 0 32px;
+}
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-md);
+}
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--dim);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  background: var(--surface);
+}
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.table tbody tr:hover td {
+  background: var(--surface);
+}
+.dense td,
+.dense th {
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+}
+.num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+.dim {
+  color: var(--dim);
+}
+.bad {
+  color: var(--red-text);
+}
+.flag {
+  color: var(--amber);
+}
+
+/* Share of cost: a thin meter, one hue, track a lighter step of the same ink. */
+.share {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+.track {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--muted);
+}
+.shareText {
+  width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.footnote {
+  margin-top: 32px;
+  max-width: 760px;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--dim);
+}
+
+/* Navigation and operator */
+.operator {
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+.nav {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+.nav a {
+  position: relative;
+  height: 40px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: var(--text-md);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nav a:hover {
+  color: var(--text);
+}
+.nav a.navOn {
+  color: var(--text);
+}
+.nav a.navOn::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text);
+}
+
+/* Search */
+.search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 4px 4px 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  max-width: 640px;
+}
+.search:focus-within {
+  border-color: var(--dim);
+  box-shadow: var(--focus-ring);
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: var(--text-base);
+}
+
+/* Actions */
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.actions {
+  grid-column: span 2;
+}
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.rowActions {
+  text-align: right;
+}
+.good {
+  color: var(--green);
+}
+.wrap {
+  white-space: normal !important;
+  min-width: 200px;
+}
+
+/* Control cards */
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 880px;
+}
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.cardText {
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: 1.55;
+  max-width: 640px;
+}
+.inline {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inline > div {
+  flex: 1;
+  min-width: 220px;
+}
+.listField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-md);
+  font-weight: 500;
+}
+.listField textarea {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: 400;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  resize: vertical;
+  outline: none;
+}
+.listField textarea:focus {
+  border-color: var(--dim);
+  box-shadow: var(--focus-ring);
+}
+
+/* Spend meter: the fill carries the state, the track is a lighter step. */
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.meterTrack {
+  flex: 1;
+  max-width: 420px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.meterFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+.meterOk {
+  background: var(--muted);
+}
+.meterAmber {
+  background: var(--amber);
+}
+.meterRed {
+  background: var(--red);
+}
+.meterText {
+  font-size: var(--text-md);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .actions {
+    grid-column: auto;
+  }
+  .fieldRow {
+    grid-template-columns: 1fr;
+  }
+}

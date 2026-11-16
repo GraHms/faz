@@ -39,7 +39,7 @@ func (p *Pipeline) begin() error {
 }
 
 // Intake reads the client's request and returns the structured brief,
-// including up to three clarifying questions. It costs one Haiku call.
+// including up to three clarifying questions. It costs one Sonnet call.
 func (p *Pipeline) Intake(ctx context.Context) (*spec.Brief, error) {
 	if err := p.begin(); err != nil {
 		return nil, err

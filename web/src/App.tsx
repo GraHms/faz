@@ -1,0 +1,90 @@
+import { lazy, Suspense, type ReactNode } from 'react';
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
+import { RequireAuth } from './auth/session';
+import { Spinner } from './components/ui';
+import Landing from './pages/Landing';
+import { invite } from './lib/draft';
+
+// The marketing page loads first; app screens load when visited.
+const Pricing = lazy(() => import('./pages/Pricing'));
+const Domains = lazy(() => import('./pages/Domains'));
+const Signup = lazy(() => import('./pages/Signup'));
+const Login = lazy(() => import('./pages/Login'));
+const NewSite = lazy(() => import('./pages/NewSite'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Editor = lazy(() => import('./pages/editor/Editor'));
+const Checkout = lazy(() => import('./pages/Checkout'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const AdminOverview = lazy(() => import('./pages/admin/Admin').then((m) => ({ default: m.AdminOverview })));
+const AdminSite = lazy(() => import('./pages/admin/Admin').then((m) => ({ default: m.AdminSite })));
+const AdminUsers = lazy(() => import('./pages/admin/Users').then((m) => ({ default: m.AdminUsers })));
+const AdminUser = lazy(() => import('./pages/admin/Users').then((m) => ({ default: m.AdminUser })));
+const AdminSites = lazy(() => import('./pages/admin/Sites').then((m) => ({ default: m.AdminSites })));
+const AdminInvites = lazy(() => import('./pages/admin/Invites').then((m) => ({ default: m.AdminInvites })));
+const AdminControl = lazy(() => import('./pages/admin/Control').then((m) => ({ default: m.AdminControl })));
+const AdminAudit = lazy(() => import('./pages/admin/Audit').then((m) => ({ default: m.AdminAudit })));
+
+function Loading() {
+  return (
+    <div style={{ minHeight: '60vh', display: 'grid', placeItems: 'center' }}>
+      <Spinner label="A carregar" />
+    </div>
+  );
+}
+
+/** Scrolls to the top on navigation, or to the #hash when there is one. */
+function ScrollManager() {
+  const { pathname, hash, search } = useLocation();
+  useEffect(() => invite.capture(search), [search]);
+  useEffect(() => {
+    if (hash) {
+      const el = document.getElementById(hash.slice(1));
+      if (el) {
+        el.scrollIntoView();
+        return;
+      }
+    }
+    window.scrollTo(0, 0);
+  }, [pathname, hash]);
+  return null;
+}
+
+const authed = (el: ReactNode) => <RequireAuth>{el}</RequireAuth>;
+
+export function AppRoutes() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <ScrollManager />
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/precos" element={<Pricing />} />
+        <Route path="/dominios" element={<Domains />} />
+        <Route path="/criar-conta" element={<Signup />} />
+        <Route path="/entrar" element={<Login />} />
+        <Route path="/novo" element={authed(<NewSite />)} />
+        <Route path="/painel" element={authed(<Dashboard />)} />
+        <Route path="/sites/:id" element={authed(<Editor />)} />
+        <Route path="/recarregar" element={authed(<Checkout />)} />
+        {/* Operators: guarded by the admin key, not by an owner session. */}
+        <Route path="/admin" element={<AdminOverview />} />
+        <Route path="/admin/sites" element={<AdminSites />} />
+        <Route path="/admin/sites/:id" element={<AdminSite />} />
+        <Route path="/admin/utilizadores" element={<AdminUsers />} />
+        <Route path="/admin/utilizadores/:id" element={<AdminUser />} />
+        <Route path="/admin/convites" element={<AdminInvites />} />
+        <Route path="/admin/controlo" element={<AdminControl />} />
+        <Route path="/admin/registo" element={<AdminAudit />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  );
+}

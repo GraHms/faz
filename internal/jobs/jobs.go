@@ -140,7 +140,7 @@ func (w *Worker) claim(ctx context.Context) (Job, error) {
 		timeout = 30 * time.Minute
 	}
 	var j Job
-	err := w.DB.QueryRowContext(ctx, `UPDATE jobs SET status = 'running', attempts = attempts + 1, locked_at = now(), locked_by = $1, updated_at = now()
+	err := w.DB.QueryRowContext(ctx, `UPDATE jobs SET status = 'running', progress = NULL, attempts = attempts + 1, locked_at = now(), locked_by = $1, updated_at = now()
 		WHERE id = (
 			SELECT id FROM jobs
 			WHERE (status = 'queued' AND run_after <= now())

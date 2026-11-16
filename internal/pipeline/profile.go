@@ -30,13 +30,18 @@ type Profile map[string]StageConfig
 //
 // quality: Opus where judgment decides the outcome (planning, critique,
 // visual review); Sonnet where volume of output dominates (copy, HTML,
-// repair); Haiku for extraction.
+// repair) and for intake; Haiku only to route chat messages.
 //
-// economy: Sonnet everywhere except intake. Use it to compare against
+// Intake runs on Sonnet in both profiles. It is more than extraction: it
+// reads the photos, chooses the questions, and writes the summary the owner
+// confirms, so its mistakes reach every later stage. Haiku saved little
+// there next to the cost of a wrong first page.
+//
+// economy: Sonnet everywhere except classify. Use it to compare against
 // quality on your own briefs before deciding what Opus is worth to you.
 var Profiles = map[string]Profile{
 	"quality": {
-		prompts.Intake:   {Haiku, "medium", 8_000},
+		prompts.Intake:   {Sonnet, "medium", 8_000},
 		prompts.Content:  {Sonnet, "medium", 16_000},
 		prompts.Plan:     {Opus, "high", 32_000},
 		prompts.Critique: {Opus, "high", 32_000},
@@ -47,7 +52,7 @@ var Profiles = map[string]Profile{
 		prompts.Edit:     {Sonnet, "low", 64_000},
 	},
 	"economy": {
-		prompts.Intake:   {Haiku, "medium", 8_000},
+		prompts.Intake:   {Sonnet, "medium", 8_000},
 		prompts.Content:  {Sonnet, "medium", 16_000},
 		prompts.Plan:     {Sonnet, "high", 32_000},
 		prompts.Critique: {Sonnet, "high", 32_000},

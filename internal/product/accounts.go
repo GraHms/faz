@@ -33,6 +33,15 @@ var errBadLogin = &Error{Status: http.StatusUnauthorized, Code: "bad_login", Mes
 // ErrUnauthenticated means no valid session.
 var ErrUnauthenticated = &Error{Status: http.StatusUnauthorized, Code: "unauthenticated", Message: "Entra na tua conta para continuar."}
 
+// errSuspended is returned for suspended accounts: 401 on a session, so the
+// app signs out, and 403 on login.
+var errSuspended = &Error{Status: http.StatusUnauthorized, Code: "account_suspended", Message: "A tua conta está suspensa. Fala com a equipa Faz para saber porquê."}
+
+var (
+	errInviteRequired = &Error{Status: http.StatusForbidden, Code: "invite_required", Message: "A Faz está em beta fechado: precisas de um código de convite para criar conta."}
+	errInviteInvalid  = &Error{Status: http.StatusForbidden, Code: "invite_invalid", Message: "Este código de convite não é válido, expirou ou já foi usado todas as vezes."}
+)
+
 func normalizeEmail(e string) (string, error) {
 	e = strings.ToLower(clean(e))
 	a, err := mail.ParseAddress(e)
@@ -43,7 +52,9 @@ func normalizeEmail(e string) (string, error) {
 }
 
 // Signup creates an account, grants the signup credits and opens a session.
-func (s *Service) Signup(ctx context.Context, name, email, password string) (*Session, error) {
+// Signup creates an account. While the beta is on, a live invite code is
+// required; a code's bonus credits are added on top of the signup gift.
+func (s *Service) Signup(ctx context.Context, name, email, password, invite string) (*Session, error) {
 	name = clean(name)
 	if name == "" || len([]rune(name)) > 80 {
 		return nil, badRequest("invalid_name", "Escreve o teu nome.")
@@ -54,6 +65,14 @@ func (s *Service) Signup(ctx context.Context, name, email, password string) (*Se
 	}
 	if err := auth.ValidatePassword(password); err != nil {
 		return nil, badRequest("weak_password", "A palavra-passe precisa de pelo menos 8 caracteres.")
+	}
+	settings, err := s.Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	invite = NormalizeInvite(invite)
+	if settings.BetaRequired && invite == "" {
+		return nil, errInviteRequired
 	}
 	hash, err := auth.HashPassword(password, s.Cfg.PasswordIterations)
 	if err != nil {
@@ -68,10 +87,34 @@ func (s *Service) Signup(ctx context.Context, name, email, password string) (*Se
 		user = u
 		if s.Cfg.Pricing.SignupGift > 0 {
 			key := "gift:" + u.ID
-			_, err = s.Store.AddLedger(ctx, tx, store.LedgerEntry{UserID: u.ID, Delta: s.Cfg.Pricing.SignupGift, Kind: "signup_gift",
-				Reason: "Créditos de oferta para o primeiro site", IdempotencyKey: &key})
+			if _, err = s.Store.AddLedger(ctx, tx, store.LedgerEntry{UserID: u.ID, Delta: s.Cfg.Pricing.SignupGift, Kind: "signup_gift",
+				Reason: "Créditos de oferta para o primeiro site", IdempotencyKey: &key}); err != nil {
+				return err
+			}
 		}
-		return err
+		// A code typed by mistake is refused even when the beta is off, so
+		// nobody signs up believing they got a bonus they did not get.
+		if invite != "" {
+			inv, err := s.Store.UseInvite(ctx, tx, invite)
+			if errors.Is(err, store.ErrNotFound) {
+				return errInviteInvalid
+			}
+			if err != nil {
+				return err
+			}
+			if err := s.Store.SetUserInvite(ctx, tx, u.ID, inv.Code); err != nil {
+				return err
+			}
+			user.InviteCode = &inv.Code
+			if inv.BonusCredits > 0 {
+				key := "invite:" + u.ID
+				if _, err := s.Store.AddLedger(ctx, tx, store.LedgerEntry{UserID: u.ID, Delta: inv.BonusCredits, Kind: "adjustment",
+					Reason: "Bónus do convite " + inv.Code, IdempotencyKey: &key}); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	})
 	if errors.Is(err, store.ErrEmailTaken) {
 		return nil, conflict("email_taken", "Já existe uma conta com este email. Entra na tua conta.")
@@ -96,6 +139,9 @@ func (s *Service) Login(ctx context.Context, email, password string) (*Session, 
 	}
 	if !auth.CheckPassword(u.PasswordHash, password) {
 		return nil, errBadLogin
+	}
+	if u.SuspendedAt != nil {
+		return nil, &Error{Status: http.StatusForbidden, Code: errSuspended.Code, Message: errSuspended.Message}
 	}
 	return s.openSession(ctx, u)
 }
@@ -128,6 +174,9 @@ func (s *Service) Authenticate(ctx context.Context, token string) (store.User, e
 	u, err := s.Store.UserBySession(ctx, auth.HashToken(token))
 	if errors.Is(err, store.ErrNotFound) {
 		return store.User{}, ErrUnauthenticated
+	}
+	if err == nil && u.SuspendedAt != nil {
+		return store.User{}, errSuspended
 	}
 	return u, err
 }
