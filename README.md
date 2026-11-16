@@ -185,7 +185,8 @@ The default prices come from the prototype. By the estimates in the design doc, 
 
 - **Job queue:** a small queue on Postgres (`FOR UPDATE SKIP LOCKED`) instead of River. River needs Go 1.26 and this was written with Go 1.24; the `jobs` package mirrors River's shape so the swap stays local.
 - **Payments:** only the mock exists. M-Pesa and e-Mola adapters implement `payments.Provider`.
-- **Not built yet:** domain search and registration, Google sign in, password reset, rate limiting.
+- **Custom domains: coming soon.** The app shows them as "Em breve" (pricing, domains page, publish dialog, "Ligar domínio" in the editor, the Domínios tab). The Worker can already serve a hostname mapped in `domains/<host>.json`, but nothing creates that mapping, registers domains or issues certificates for them yet; the plan is Cloudflare for SaaS custom hostnames.
+- **Not built yet:** Google sign in, password reset, unpublishing, rate limiting.
 - **Dockerfile untested:** it was not built in the authoring sandbox. Chromium's sandbox inside containers may need `--cap-add=SYS_ADMIN` or a seccomp profile. Prefer that to passing `--no-sandbox`, since the rendered HTML is model generated.
 
 ## Sample output

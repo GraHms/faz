@@ -147,6 +147,12 @@ await page.getByText(/Pus o custo de entrega/).waitFor({ timeout: 120_000 });
 await page.waitForTimeout(800);
 await shot(page, 'edited');
 
+step('custom domains, coming soon');
+await page.getByRole('button', { name: /Ligar domínio/ }).click();
+await page.getByRole('dialog', { name: 'Domínio próprio: em breve' }).waitFor();
+await shot(page, 'domain-soon');
+await page.getByRole('button', { name: 'Fechar' }).click();
+
 step('publish');
 await page.getByRole('button', { name: 'Publicar', exact: true }).click();
 const dialog = page.getByRole('dialog');
@@ -165,6 +171,10 @@ await page.goto(BASE + '/painel');
 await page.getByRole('heading', { name: /Tudo pronto para criar, Ana\?/ }).waitFor();
 await page.getByText(address).waitFor();
 await shot(page, 'dashboard');
+await page.getByRole('button', { name: 'Domínios' }).click();
+await page.getByRole('heading', { name: 'Domínios próprios' }).waitFor();
+await page.getByRole('link', { name: address }).waitFor();
+await shot(page, 'dashboard-domains');
 await page.getByRole('button', { name: 'Pagamentos' }).click();
 await page.getByText('Recibos').waitFor();
 await page.getByText('Pago').first().waitFor();
@@ -180,6 +190,7 @@ await page.goto(BASE + '/precos');
 await page.getByText('Recarga mínima · 200 créditos').waitFor();
 await shot(page, 'pricing');
 await page.goto(BASE + '/dominios');
+await page.getByRole('heading', { name: 'Domínios próprios' }).waitFor();
 await shot(page, 'domains');
 
 step('phone');

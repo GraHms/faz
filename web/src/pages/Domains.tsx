@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MarketingLayout } from '../components/MarketingLayout';
-import { Dot } from '../components/ui';
+import { Dot, Soon } from '../components/ui';
 import { useSession } from '../auth/session';
 import { draft } from '../lib/draft';
 import { slugify } from '../lib/format';
@@ -20,10 +20,13 @@ export default function Domains() {
     <MarketingLayout>
       <section className={s.hero}>
         <div className={s.inner}>
-          <h1 className={s.h1}>Encontra o teu domínio</h1>
+          <div>
+            <Soon />
+          </div>
+          <h1 className={s.h1}>Domínios próprios</h1>
           <p className={s.lead}>
-            Domínios próprios .co.mz e .com, pagos com M-Pesa, estão a caminho. Até lá, cada site é publicado grátis em
-            nome.{sitesDomain}.
+            Em breve vais poder ligar um domínio .co.mz ou .com ao teu site e pagá-lo com M-Pesa ou <span className="nowrap">e-Mola</span>. Até lá, cada
+            site é publicado grátis em nome.{sitesDomain}, e esse endereço continua a funcionar depois.
           </p>
           <form
             className={s.search}
@@ -50,15 +53,11 @@ export default function Domains() {
             </li>
             <li>
               <span className={s.name}>{name}.co.mz</span>
-              <span className={s.soon}>
-                <Dot tone="amber" /> em breve
-              </span>
+              <Soon />
             </li>
             <li>
               <span className={s.name}>{name}.com</span>
-              <span className={s.soon}>
-                <Dot tone="amber" /> em breve
-              </span>
+              <Soon />
             </li>
           </ul>
         </div>

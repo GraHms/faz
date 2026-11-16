@@ -4,20 +4,22 @@ import { sitesDomain, type LedgerEntry, type Payment, type Site } from '../api';
 import { useSession } from '../auth/session';
 import { AppHeader } from '../components/AppHeader';
 import { PromptCard } from '../components/PromptCard';
-import { ButtonLink, Notice, Pill, Spinner } from '../components/ui';
+import { ButtonLink, Notice, Pill, Soon, Spinner } from '../components/ui';
 import { useCredits, usePayments, usePricing, useSites } from '../hooks/queries';
 import { draft } from '../lib/draft';
 import { credits, firstName, fmt, fmtPhone, mzn, since, swatch } from '../lib/format';
 import { siteStatus } from '../lib/status';
 import s from './Dashboard.module.css';
 
-type Tab = 'projectos' | 'pagamentos';
+type Tab = 'projectos' | 'dominios' | 'pagamentos';
 
 export default function Dashboard() {
   const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get('tab') === 'pagamentos' ? 'pagamentos' : 'projectos';
+  const asked = params.get('tab');
+  const tab: Tab = asked === 'pagamentos' || asked === 'dominios' ? asked : 'projectos';
   const tabs: [Tab, string][] = [
     ['projectos', 'Projectos'],
+    ['dominios', 'Domínios'],
     ['pagamentos', 'Pagamentos'],
   ];
 
@@ -37,7 +39,7 @@ export default function Dashboard() {
           ))}
         </nav>
       </AppHeader>
-      <main className={s.main}>{tab === 'projectos' ? <Projects /> : <Payments />}</main>
+      <main className={s.main}>{tab === 'projectos' ? <Projects /> : tab === 'dominios' ? <Domains /> : <Payments />}</main>
     </div>
   );
 }
@@ -138,6 +140,63 @@ function SiteCard({ site }: { site: Site }) {
         <span className={s.cardTime}>Editado {since(site.updated_at)}</span>
       </div>
     </Link>
+  );
+}
+
+/** Custom domains are not built yet: say so, and list the free addresses in use. */
+function Domains() {
+  const sites = useSites();
+  const live = (sites.data ?? []).filter((x) => x.subdomain);
+  return (
+    <div className={s.payments}>
+      <section className={s.balanceCard}>
+        <div className={s.soonCopy}>
+          <Soon />
+          <h2 className={s.h2}>Domínios próprios</h2>
+          <p className={s.muted}>
+            Em breve vais poder ligar um domínio .co.mz ou .com a cada site e pagá-lo com M-Pesa ou <span className="nowrap">e-Mola</span>. Os endereços grátis abaixo
+            continuam a funcionar depois.
+          </p>
+        </div>
+      </section>
+      <section className={s.section}>
+        <h2 className={s.h2}>Endereços grátis</h2>
+        {sites.isPending ? (
+          <Spinner label="A carregar" />
+        ) : live.length === 0 ? (
+          <div className={s.empty}>
+            <p>Ainda não publicaste nenhum site. Quando publicares, o endereço aparece aqui.</p>
+          </div>
+        ) : (
+          <table className={s.table}>
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th>Endereço</th>
+                <th>Domínio próprio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {live.map((x) => (
+                <tr key={x.id}>
+                  <td>
+                    <Link to={`/sites/${x.id}`}>{x.business_name}</Link>
+                  </td>
+                  <td>
+                    <a className="mono" href={`https://${x.subdomain}.${sitesDomain}`} target="_blank" rel="noopener noreferrer">
+                      {x.subdomain}.{sitesDomain}
+                    </a>
+                  </td>
+                  <td>
+                    <Soon />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </div>
   );
 }
 

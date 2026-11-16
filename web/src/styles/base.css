@@ -86,6 +86,10 @@ h2 {
   color: var(--dim);
 }
 
+.nowrap {
+  white-space: nowrap;
+}
+
 .tabular {
   font-variant-numeric: tabular-nums;
 }

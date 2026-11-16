@@ -195,4 +195,14 @@ export function Pill({ tone, pulse, children }: { tone?: DotTone; pulse?: boolea
   );
 }
 
+/** Marks something shown but not built yet, such as custom domains. */
+export function Soon({ label = 'Em breve' }: { label?: string }) {
+  return (
+    <span className={s.soonBadge}>
+      <Dot tone="amber" />
+      {label}
+    </span>
+  );
+}
+
 export { cx };

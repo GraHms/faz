@@ -6,7 +6,7 @@ import { CORRECTION_KEY } from '../../api/types';
 import { answerSummary, storedToValues } from '../../lib/answers';
 import { useSession } from '../../auth/session';
 import { TopUpModal, type TopUpReason } from '../../components/TopUpModal';
-import { Button, Notice, Pill, Spinner } from '../../components/ui';
+import { Button, Notice, Pill, Soon, Spinner } from '../../components/ui';
 import { activeJobId, keys, useJob, usePricing, useSite } from '../../hooks/queries';
 import { draft, imageAccept, pickImages } from '../../lib/draft';
 import { credits, firstName } from '../../lib/format';
@@ -14,6 +14,7 @@ import { siteStatus } from '../../lib/status';
 import { Preview, type Device } from './Preview';
 import { Progress } from './Progress';
 import { PublishModal } from './PublishModal';
+import { DomainModal } from './DomainModal';
 import { FazLabel, Questions } from './Questions';
 import s from './editor.module.css';
 
@@ -54,6 +55,7 @@ function Workspace({ view }: { view: SiteView }) {
   const [device, setDevice] = useState<Device>('desktop');
   const [tab, setTab] = useState<'chat' | 'site'>('chat');
   const [publishing, setPublishing] = useState(false);
+  const [domain, setDomain] = useState(false);
   const [topUp, setTopUp] = useState<TopUpState | null>(null);
   const [notice, setNotice] = useState<string | null>(() => {
     const failed = (loc.state as { uploadFailed?: number } | null)?.uploadFailed;
@@ -141,6 +143,9 @@ function Workspace({ view }: { view: SiteView }) {
             Abrir
           </a>
         )}
+        <Button size="sm" variant="secondary" className={s.domainBtn} onClick={() => setDomain(true)}>
+          Ligar domínio <Soon />
+        </Button>
         <Button size="sm" onClick={() => setPublishing(true)} disabled={site.current_version === 0}>
           Publicar
         </Button>
@@ -180,6 +185,7 @@ function Workspace({ view }: { view: SiteView }) {
       </nav>
 
       <PublishModal open={publishing} onClose={() => setPublishing(false)} view={view} />
+      <DomainModal open={domain} onClose={() => setDomain(false)} view={view} onPublish={() => setPublishing(true)} />
       <TopUpModal
         open={!!topUp}
         onClose={() => setTopUp(null)}

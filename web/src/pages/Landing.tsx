@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MarketingLayout } from '../components/MarketingLayout';
 import { PromptCard } from '../components/PromptCard';
-import { Dot } from '../components/ui';
+import { Soon } from '../components/ui';
 import { useSession } from '../auth/session';
 import { draft } from '../lib/draft';
 import { examples, type Example } from '../lib/examples';
@@ -127,15 +127,12 @@ export default function Landing() {
               <hr />
               <div>
                 <span>nyeleti.co.mz</span>
-                <span className={s.soon}>
-                  <Dot tone="amber" />
-                  em breve
-                </span>
+                <Soon />
               </div>
             </div>
             <span className={s.num}>03</span>
             <h3 className={s.h3}>Publica</h3>
-            <p className={s.p}>Começa grátis em .{sitesDomain}. Domínios .co.mz pagos com M-Pesa estão a caminho.</p>
+            <p className={s.p}>Publica grátis em .{sitesDomain}. Domínios próprios .co.mz, pagos com M-Pesa, chegam em breve.</p>
           </div>
         </section>
 

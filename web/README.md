@@ -53,7 +53,7 @@ It keeps the rules the screens depend on: the 19 credit gift, free questions, ch
 
 ## What is not there yet
 
-These have no backend, so the app says so instead of pretending: custom domains (shown as "em breve"), Google sign in and password reset (not offered). The landing examples are labelled as starting points, not as customer sites.
+These have no backend, so the app says so instead of pretending. Custom domains are shown wherever the prototype had them, marked with the shared `<Soon />` badge ("Em breve"): the pricing cell, the domains page, the publish dialog, "Ligar domínio" in the editor and the dashboard's Domínios tab, which lists the free addresses in use. Google sign in and password reset are not offered. The landing examples are labelled as starting points, not as customer sites.
 
 ## Checks
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, isApiError, sitesDomain, type Published, type SiteView } from '../../api';
 import { Modal } from '../../components/Modal';
-import { Button, Dot, Notice, Spinner } from '../../components/ui';
+import { Button, Dot, Notice, Soon, Spinner } from '../../components/ui';
 import { keys } from '../../hooks/queries';
 import { slugify, subdomainProblem } from '../../lib/format';
 import s from './editor.module.css';
@@ -166,9 +166,7 @@ export function PublishModal({ open, onClose, view }: { open: boolean; onClose: 
         )}
         <div className={s.ownDomain}>
           <span>Domínio próprio, como {name || 'onegocio'}.co.mz</span>
-          <span className={s.soon}>
-            <Dot tone="amber" /> em breve
-          </span>
+          <Soon />
         </div>
       </div>
     </Modal>

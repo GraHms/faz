@@ -84,6 +84,14 @@
   background: var(--surface-hover);
   color: var(--text);
 }
+.domainBtn {
+  gap: 8px;
+}
+@media (max-width: 1100px) {
+  .header .domainBtn {
+    display: none;
+  }
+}
 .liveLink {
   font-size: var(--text-md);
   color: var(--muted);
@@ -167,7 +175,8 @@
     color: var(--on-light);
     border-color: var(--text);
   }
-  .hideSm {
+  .hideSm,
+  .header .hideSm {
     display: none;
   }
   .showSm,
