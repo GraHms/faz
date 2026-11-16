@@ -23,6 +23,7 @@ The user message contains the client's request as they wrote it, followed by a l
     - `kind` is `choice` (pick one), `multi` (pick several), `phone` or `text`. Choice questions have two to four options, each a short label.
     - If the request already has everything a good page needs, return an empty list.
     - If photos are attached, never ask whether the client has photos. Ask about them only if what they show is unclear and it matters.
+    - Address the client the way the rest of the app does. In Portuguese that is the informal "tu" ("Qual é o teu número de WhatsApp?", "Escreve o preço de cada serviço"), never "você", "o senhor" or a third person "pode escrever". This applies to questions, hints, options and `understood`, not to the page itself, which speaks to the business's own customers.
 11. `understood` is what you understood, said back to the client so they can correct it before anything is built. Write it in `language`, addressed to them, in at most two short sentences: what the business is, who the page is for, and the one thing it must get visitors to do. Use their own words where you can, and state your main assumption plainly instead of hedging, because a wrong guess they can see is cheaper than one they discover on the finished page. No design vocabulary.
 
 # Output

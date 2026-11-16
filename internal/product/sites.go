@@ -256,10 +256,20 @@ func (s *Service) Answer(ctx context.Context, u store.User, siteID string, answe
 			return err
 		}
 		_, err = s.Store.AddMessage(ctx, tx, store.Message{SiteID: site.ID, Role: "assistant", JobID: &jobID, CreditsCharged: price,
-			Text: "Obrigado. Estou a construir o teu site; demora um ou dois minutos."})
+			Text: "Obrigado. Estou a construir o teu site; costuma demorar " + buildWait(s.Cfg.ProfileName) + ". Podes sair desta página, o trabalho continua."})
 		return err
 	})
 	return jobID, err
+}
+
+// buildWait is the honest wait for a first page under each profile, from
+// real runs in November 2026: quality took 6.4 to 9.3 minutes, balanced and
+// economy 3.8 to 4.8. Update it when telemetry says otherwise.
+func buildWait(profile string) string {
+	if profile == "" || profile == "quality" {
+		return "uns 8 minutos"
+	}
+	return "uns 5 minutos"
 }
 
 // labelAnswers validates answers against the questions and turns choice

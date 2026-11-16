@@ -111,7 +111,10 @@ func (s *Service) handleBuild(ctx context.Context, j jobs.Job) (any, error) {
 		return nil, err
 	}
 	text := "Pronto. Pede alterações aqui ou carrega em Publicar para escolher o endereço do site."
-	if k := len(rep.Placeholders); k > 0 {
+	switch k := len(rep.Placeholders); {
+	case k == 1:
+		text = "Pronto. Há 1 informação marcada no site para completares; diz-me aqui e eu ponho-a. Quando quiseres, carrega em Publicar."
+	case k > 1:
 		text = fmt.Sprintf("Pronto. Há %d informações marcadas no site para completares; diz-me aqui e eu ponho-as. Quando quiseres, carrega em Publicar.", k)
 	}
 	if rep.Status == "needs_review" {

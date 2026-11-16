@@ -48,21 +48,36 @@ Needs Go 1.24 and Chrome or Chromium on the machine for the render and review st
 
 ## Profiles
 
-| Stage | quality | economy |
-|---|---|---|
-| intake | Sonnet 5.5, medium | Sonnet 5.5, medium |
-| content | Sonnet 5.5, medium | Sonnet 5.5, medium |
-| plan | Opus 5.5, high | Sonnet 5.5, high |
-| critique | Opus 5.5, high | Sonnet 5.5, high |
-| build | Sonnet 5.5, medium | Sonnet 5.5, medium |
-| review | Opus 5.5, medium | Sonnet 5.5, medium |
-| repair | Sonnet 5.5, medium | Sonnet 5.5, medium |
-| classify (product chat) | Haiku 5.5, low | Haiku 5.5, low |
-| edit (product chat) | Sonnet 5.5, low | Sonnet 5.5, low |
+| Stage | quality | balanced | economy |
+|---|---|---|---|
+| intake | Sonnet 5.5, medium | Sonnet 5.5, medium | Sonnet 5.5, medium |
+| content | Sonnet 5.5, medium | Sonnet 5.5, medium | Sonnet 5.5, medium |
+| plan | Opus 5.5, high | Opus 5.5, medium | Sonnet 5.5, high |
+| critique | Opus 5.5, high | Sonnet 5.5, high | Sonnet 5.5, high |
+| build | Sonnet 5.5, medium | Sonnet 5.5, medium | Sonnet 5.5, medium |
+| review | Opus 5.5, medium | Sonnet 5.5, medium | Sonnet 5.5, medium |
+| repair | Sonnet 5.5, medium | Sonnet 5.5, medium | Sonnet 5.5, medium |
+| classify (product chat) | Haiku 5.5, low | Haiku 5.5, low | Haiku 5.5, low |
+| edit (product chat) | Sonnet 5.5, low | Sonnet 5.5, low | Sonnet 5.5, low |
 
-Intake runs on Sonnet in both profiles, and twice per site in the product (the questions, then the build). It is not plain extraction: it reads the photos, picks the questions and writes the summary the owner confirms, so its mistakes reach every later stage. Classify stays on Haiku because every chat message waits on it and it only routes; check its charge decisions on real messages before launch.
+Intake runs on Sonnet in every profile, and twice per site in the product (the questions, then the build). It is not plain extraction: it reads the photos, picks the questions and writes the summary the owner confirms, so its mistakes reach every later stage. Classify stays on Haiku because every chat message waits on it and it only routes; check its charge decisions on real messages before launch.
 
-Run the same briefs through both before deciding what Opus is worth for your clients. Edit `internal/pipeline/profile.go` to add your own.
+### Measured on the live API (16 November 2026)
+
+Nine first pages from four briefs (honey cooperative, car workshop, restaurant, hair salon), rendering on, list prices:
+
+| Profile | Runs | Cost per first page | Time per first page |
+|---|---|---|---|
+| quality | 4 | $0.80 to $1.39 (51 to 89 MZN) | 6.4 to 9.3 min |
+| balanced | 2 | $0.55 | 4.2 min |
+| economy | 3 | $0.42 to $0.48 | 3.8 to 4.8 min |
+
+- Plan and critique on Opus at high effort are about two thirds of the time and cost of a quality build, mostly thinking tokens (10k to 22k output tokens each).
+- The questions cost about $0.01 and take 7 seconds. A small edit (classify plus edit) cost $0.03 and finished in 6 seconds.
+- On these briefs the profiles differed more in taste than in correctness: all three handled the restaurant's tourists, quality by adding English lines, balanced and economy by explaining local dishes in Portuguese. Four briefs is too few to settle it; judge on your own.
+- At the default prices the first page loses money on every profile: it charges 19 credits (16.38 MZN before IVA) against 27 to 89 MZN of model spend. Edits are profitable (5 credits against about 2 MZN).
+
+Edit `internal/pipeline/profile.go` to add your own profile.
 
 ## Operating it
 
@@ -204,7 +219,7 @@ The admin API and the web app's `/admin` pages read it back:
 
 Read these numbers with two caveats:
 
-- **Costs are estimates.** They are made at call time from the price table in `internal/llm/cost.go`, which still needs checking against the pricing page. A later price change does not rewrite history.
+- **Costs are estimates.** They are made at call time from the price table in `internal/llm/cost.go`, which was checked against the pricing page on 16 November 2026. A later price change does not rewrite history.
 - **Gift credits count at list price.** Credits are valued without IVA, signup gift included, so a site built only with gift credits shows the value given away, not money received.
 
 The admin key is separate from accounts on purpose. Emails are not verified, so no account can be trusted to be the operator.
@@ -251,7 +266,7 @@ The pipeline test runs every stage against `examples/fake`, including a real hea
 
 ## Known limits
 
-- The HTTP client was tested against a local server that mimics the Messages API stream, not against the live API. Run one real brief before relying on it.
-- Prices in `internal/llm/cost.go` are list prices from November 2026; cache read rates for Haiku 5.5 and Fable 5.2 are assumed. Verify against the pricing page.
+- The HTTP client has run real briefs against the live API (November 2026); the figures are under Profiles.
+- Prices in `internal/llm/cost.go` match the published input, output and cache read rates for Opus, Sonnet and Haiku 5.5 (checked 16 November 2026). Cache write is assumed at 1.25 times input, and Fable 5.2 was not checked.
 - Repairs are verified by the checks and new screenshots, but not re-reviewed by a model. That is deliberate (one pass, no loop); look at `screenshots/final` before shipping.
 - Headless Chrome cannot open windows narrower than 500px, so phone widths render inside a same origin iframe of the exact width. Media queries and viewport units behave correctly; mobile browser quirks (address bar, text autosizing) are not emulated.

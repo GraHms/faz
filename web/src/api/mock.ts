@@ -604,7 +604,7 @@ export function createMockApi(opts: MockOptions): Api {
           role: 'assistant',
           job_id: j.id,
           credits_charged: pricing.first_page,
-          text: 'Obrigado. Estou a construir o teu site; demora um ou dois minutos.',
+          text: 'Obrigado. Estou a construir o teu site; costuma demorar uns 8 minutos. Podes sair desta página, o trabalho continua.',
         });
         return { job_id: j.id };
       }),

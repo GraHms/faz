@@ -62,6 +62,19 @@ var Profiles = map[string]Profile{
 		prompts.Classify: {Haiku, "low", 4_000},
 		prompts.Edit:     {Sonnet, "low", 64_000},
 	},
+	// balanced: Opus only for the plan, at medium effort, because the plan is
+	// where the brief's requirements are read and decided; Sonnet for the rest.
+	"balanced": {
+		prompts.Intake:   {Sonnet, "medium", 8_000},
+		prompts.Content:  {Sonnet, "medium", 16_000},
+		prompts.Plan:     {Opus, "medium", 32_000},
+		prompts.Critique: {Sonnet, "high", 32_000},
+		prompts.Build:    {Sonnet, "medium", 64_000},
+		prompts.Review:   {Sonnet, "medium", 16_000},
+		prompts.Repair:   {Sonnet, "medium", 64_000},
+		prompts.Classify: {Haiku, "low", 4_000},
+		prompts.Edit:     {Sonnet, "low", 64_000},
+	},
 }
 
 // ProfileNames lists the built in profiles.

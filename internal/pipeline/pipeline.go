@@ -566,17 +566,26 @@ func callJSON[T any](ctx context.Context, p *Pipeline, stage string, parts []llm
 			return nil, err
 		}
 		v := new(T)
-		if err := llm.DecodeJSON(resp.Text, v); err != nil {
-			lastErr = err
-			continue
+		err = llm.DecodeJSON(resp.Text, v)
+		if err == nil {
+			err = validate(v)
 		}
-		if err := validate(v); err != nil {
-			lastErr = err
-			continue
+		if err == nil {
+			return v, nil
 		}
-		return v, nil
+		lastErr = err
+		p.invalid(err)
 	}
 	return nil, fmt.Errorf("%s: output failed validation twice: %w", stage, lastErr)
+}
+
+// invalid records why the last call's output was rejected, so a retry shows
+// its cause in the report and in telemetry instead of only its cost.
+func (p *Pipeline) invalid(err error) {
+	if n := len(p.rep.Stages); n > 0 && p.rep.Stages[n-1].Error == "" {
+		p.rep.Stages[n-1].Error = "invalid output: " + err.Error()
+	}
+	fmt.Fprintf(p.Opt.Log, "          rejected: %v\n", err)
 }
 
 func (p *Pipeline) visionParts(max int) []llm.Part {
