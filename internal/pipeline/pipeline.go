@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/GraHms/faz/internal/check"
 	"github.com/GraHms/faz/internal/edit"
 	"github.com/GraHms/faz/internal/history"
+	"github.com/GraHms/faz/internal/kit"
 	"github.com/GraHms/faz/internal/llm"
 	"github.com/GraHms/faz/internal/prompts"
 	"github.com/GraHms/faz/internal/render"
@@ -53,6 +55,13 @@ type Options struct {
 	// OnStage, when set, is told each time a stage starts: a model stage
 	// name, or "verify" for the rendered checks. It must return quickly.
 	OnStage func(stage string)
+	// Kit builds new pages with the Faz kit (shadcn-style components as
+	// Tailwind classes). Pages that are already kit pages are compiled and
+	// edited as kit pages whatever this says.
+	Kit bool
+	// Tailwind is the path to the Tailwind standalone binary; when empty it
+	// is looked up as "tailwindcss" on PATH.
+	Tailwind string
 }
 
 // Pipeline holds a model client and options for one run.
@@ -60,6 +69,9 @@ type Pipeline struct {
 	LLM llm.Client
 	Opt Options
 	rep *Report
+
+	kitPage   bool            // the page being worked on is a kit page
+	kitIssues []check.Finding // what the last kit compile could not do
 }
 
 // StageRun records one model call.
@@ -398,7 +410,7 @@ func (p *Pipeline) passes(plan *spec.Plan) []pass {
 
 func (p *Pipeline) verify(ctx context.Context, b *spec.Brief, c *spec.Copy, plan *spec.Plan, page, phase string, shots bool) ([]check.Finding, []shot, error) {
 	p.started("verify")
-	findings := check.Static(page, plan, c)
+	findings := append(check.Static(page, plan, c), p.kitIssues...)
 	if p.Opt.Chrome == nil {
 		return findings, nil, nil
 	}
@@ -519,7 +531,13 @@ func (p *Pipeline) started(stage string) {
 func (p *Pipeline) call(ctx context.Context, stage string, parts []llm.Part, attempt int) (llm.Response, error) {
 	p.started(stage)
 	cfg := p.Opt.Profile[stage]
-	system, err := prompts.Load(stage, p.Opt.PromptDir)
+	var system string
+	var err error
+	if p.Opt.Kit || p.kitPage {
+		system, err = prompts.LoadKit(stage, p.Opt.PromptDir, kit.Icons())
+	} else {
+		system, err = prompts.Load(stage, p.Opt.PromptDir)
+	}
 	if err != nil {
 		return llm.Response{}, err
 	}
@@ -602,6 +620,7 @@ func (p *Pipeline) visionParts(max int) []llm.Part {
 }
 
 func (p *Pipeline) inline(source string) string {
+	source = p.compileKit(source)
 	max := p.Opt.InlineMax
 	if max == 0 {
 		max = 1 << 20
@@ -620,6 +639,31 @@ func (p *Pipeline) inline(source string) string {
 		}
 	}
 	return page
+}
+
+// compileKit turns a kit page into plain HTML and CSS. A page that is not a
+// kit page passes through. When the compile fails, the page keeps its
+// uncompiled block, which renders unstyled, and a blocker finding says why.
+func (p *Pipeline) compileKit(source string) string {
+	p.kitIssues = nil
+	p.kitPage = kit.Uses(source)
+	if !p.kitPage && !strings.Contains(source, "data-icon") {
+		return source
+	}
+	bin := p.Opt.Tailwind
+	if bin == "" {
+		bin, _ = exec.LookPath("tailwindcss")
+	}
+	res, err := kit.Compile(context.Background(), bin, source)
+	if err != nil {
+		p.kitIssues = append(p.kitIssues, check.Finding{Check: "kit.compile", Severity: check.Blocker, Where: "<style type=\"text/tailwindcss\">", Message: err.Error()})
+		return source
+	}
+	if len(res.UnknownIcons) > 0 {
+		p.kitIssues = append(p.kitIssues, check.Finding{Check: "kit.icons", Severity: check.Minor, Where: "data-icon",
+			Message: "icons not in the kit were dropped: " + strings.Join(res.UnknownIcons, ", ")})
+	}
+	return res.HTML
 }
 
 func (p *Pipeline) writeJSON(name string, v any) error {

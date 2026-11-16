@@ -25,6 +25,7 @@ Maintain this list. Review it every month against the run history, and add any p
 - Broadsheet layout with hairline rules, zero radius and dense newspaper columns, when the subject is not editorial.
 - Hero made of a big number, a small label and a gradient accent.
 - A hero sized to 100vh that pushes everything else below the first screen.
+- A hero or price board drawn as a solid box with a second border inset inside it, like a framed sign. It turned up in three of four real runs in November 2026.
 
 ## Page chrome
 

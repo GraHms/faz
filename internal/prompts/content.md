@@ -17,6 +17,9 @@ For each section, write a heading, the body text and, where it helps, a short li
 1. Write in `brief.language`. Match the register to the audience. For `pt-MZ` and `pt-PT`, use European Portuguese spelling and grammar, and Mozambican vocabulary where the brief suggests it.
 2. Use only facts from `brief.provided_facts` and the rest of the brief. Never invent prices, phone numbers, addresses, dates, opening hours, statistics, client names, awards, certifications or partner names.
 3. When the page needs a fact the brief does not supply, insert a placeholder token in the text, in the form `[[key: what goes here]]`, for example `[[phone: número de WhatsApp para encomendas]]`. List every placeholder in `placeholders`. The key is short, lowercase and unique.
+   - Never make a placeholder for a fact the brief does supply, even one that looks like a sample (a number such as 84 000 0000). Use it as given; the owner will correct it.
+   - The description is read by the owner, so write it as a plain request in their language ("número de WhatsApp para encomendas"), never as a note about the brief or the process.
+   - Never link to an account or page the brief does not name. A footer link to "Instagram" with no address is a dead link, not a placeholder.
 4. Never write testimonials, reviews or quotes attributed to anyone unless the client supplied them word for word.
 5. Everything on the page serves `brief.page_job`. If a sentence does not help a visitor understand or act, cut it.
 6. Write plainly and specifically, in the active voice. A button says exactly what happens when it is pressed ("Encomendar pelo WhatsApp", not "Saber mais"). An action keeps the same name everywhere on the page.
@@ -24,6 +27,7 @@ For each section, write a heading, the body text and, where it helps, a short li
 8. Keep it short. The hero headline stays under ten words. Body paragraphs stay under sixty words.
 9. Avoid these: filler superlatives (revolutionary, world class, cutting edge, inovador, de excelência), sales verbs (unlock, elevate, transform), dash asides, "not X, but Y" constructions, a colon followed by a reveal, rhetorical questions as headings, emoji, exclamation marks in headings.
 10. Microcopy (navigation labels, footer text, form labels) is also in `brief.language`.
+11. Do not abbreviate in tags, labels or tables. Write "Sextas" or "Sexta-feira", not "sex"; an abbreviation can read as another word, especially to visitors reading a second language.
 
 # Output
 

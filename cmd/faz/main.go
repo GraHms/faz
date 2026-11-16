@@ -13,12 +13,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/GraHms/faz/internal/assets"
+	"github.com/GraHms/faz/internal/kit"
 	"github.com/GraHms/faz/internal/llm"
 	"github.com/GraHms/faz/internal/pipeline"
 	"github.com/GraHms/faz/internal/render"
@@ -42,12 +44,18 @@ func run() error {
 		chromePath  = flag.String("chrome", "", "Chrome or Chromium binary; found on PATH when empty")
 		chromeFlags = flag.String("chrome-flags", os.Getenv("FAZ_CHROME_FLAGS"), "extra Chrome flags, space separated")
 		noRender    = flag.Bool("no-render", false, "skip headless rendering and visual review")
+		useKit      = flag.Bool("kit", os.Getenv("FAZ_KIT") == "1", "build with the Faz kit: shadcn-style components compiled by Tailwind")
+		tailwind    = flag.String("tailwind", os.Getenv("FAZ_TAILWIND"), "Tailwind standalone binary for kit pages; found on PATH when empty")
 		fakeDir     = flag.String("fake", "", "use recorded responses from this directory instead of the API")
 		baseURL     = flag.String("base-url", os.Getenv("ANTHROPIC_BASE_URL"), "API base URL")
 		cache1h     = flag.Bool("cache-1h", false, "cache system prompts for one hour instead of five minutes (worth it for batches)")
 		timeout     = flag.Duration("timeout", 45*time.Minute, "overall time limit")
+		compile     = flag.String("compile", "", "compile one kit page (a source.html) to stdout and exit; use after changing the kit")
 	)
 	flag.Parse()
+	if *compile != "" {
+		return compileKit(*compile, *tailwind)
+	}
 	if *briefPath == "" {
 		flag.Usage()
 		return errors.New("-brief is required")
@@ -105,6 +113,8 @@ func run() error {
 		PromptDir:   *promptDir,
 		HistoryPath: *historyPath,
 		Chrome:      chrome,
+		Kit:         *useKit,
+		Tailwind:    *tailwind,
 		Log:         os.Stderr,
 	}}
 	rep, err := p.Run(ctx)
@@ -125,4 +135,28 @@ func defaultHistory() string {
 		return ""
 	}
 	return filepath.Join(dir, "faz", "history.jsonl")
+}
+
+// compileKit recompiles a stored kit page, for example after the kit's
+// components changed, and writes the shipped page to stdout.
+func compileKit(path, bin string) error {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !kit.Uses(string(src)) {
+		return fmt.Errorf("%s is not a kit page", path)
+	}
+	if bin == "" {
+		bin, _ = exec.LookPath("tailwindcss")
+	}
+	res, err := kit.Compile(context.Background(), bin, string(src))
+	if err != nil {
+		return err
+	}
+	if len(res.UnknownIcons) > 0 {
+		fmt.Fprintln(os.Stderr, "unknown icons dropped:", strings.Join(res.UnknownIcons, ", "))
+	}
+	_, err = os.Stdout.WriteString(res.HTML)
+	return err
 }

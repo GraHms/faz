@@ -109,6 +109,7 @@ func run(log *slog.Logger) error {
 		Pricing: pricing, Profile: profile, ProfileName: profileName, PromptDir: env("FAZ_PROMPTS_DIR", ""),
 		HistoryPath: filepath.Join(dataDir, "history.jsonl"), SitesDomain: env("FAZ_SITES_DOMAIN", "faz.co.mz"),
 		Chrome: chrome, PasswordIterations: integer("FAZ_PASSWORD_ITERATIONS", 0),
+		Kit: env("FAZ_KIT", "") == "1", Tailwind: env("FAZ_TAILWIND", ""),
 	}}
 	if v, err := strconv.ParseFloat(env("FAZ_USD_MZN", "0"), 64); err == nil && v > 0 {
 		svc.Cfg.USDToMZN = v

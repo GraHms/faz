@@ -58,6 +58,8 @@ type Config struct {
 	HistoryPath        string
 	SitesDomain        string // nome.<SitesDomain>
 	Chrome             *render.Chrome
+	Kit                bool   // build new sites with the Faz kit
+	Tailwind           string // Tailwind standalone binary for kit pages
 	PasswordIterations int
 	SessionTTL         time.Duration
 	PreviewTTL         time.Duration
@@ -120,6 +122,7 @@ func (s *Service) pipe(outDir, briefText string) *pipeline.Pipeline {
 	return &pipeline.Pipeline{LLM: s.LLM, Opt: pipeline.Options{
 		BriefText: briefText, OutDir: outDir, Profile: s.Cfg.Profile, ProfileName: s.Cfg.ProfileName,
 		PromptDir: s.Cfg.PromptDir, HistoryPath: s.Cfg.HistoryPath, Chrome: s.Cfg.Chrome,
+		Kit: s.Cfg.Kit, Tailwind: s.Cfg.Tailwind,
 	}}
 }
 

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -115,4 +116,77 @@ func TestEndToEndWithFakeModel(t *testing.T) {
 		t.Errorf("review saw %d images, want at least 4", reviewImages)
 	}
 	t.Logf("status %s, %d stage calls, estimated $%.3f, %d review images", rep.Status, len(rep.Stages), rep.TotalCostUSD, reviewImages)
+}
+
+// TestKitWithFakeModel runs the pipeline in kit mode with a recorded kit
+// page: the stages get the kit prompts and the shipped page is compiled.
+func TestKitWithFakeModel(t *testing.T) {
+	bin := os.Getenv("FAZ_TAILWIND")
+	if bin == "" {
+		bin, _ = exec.LookPath("tailwindcss")
+	}
+	if bin == "" {
+		t.Skip("no Tailwind binary; set FAZ_TAILWIND")
+	}
+	dir := t.TempDir()
+	for _, src := range []string{"../../examples/fake", "../../examples/fake-kit"} {
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			b, err := os.ReadFile(filepath.Join(src, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, e.Name()), b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	brief, _ := os.ReadFile("../../examples/briefs/mel-niassa.md")
+	files, err := assets.Load("../../examples/assets", 10<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	fake := &llm.Fake{Dir: dir}
+	p := &Pipeline{LLM: fake, Opt: Options{
+		BriefText: string(brief), Assets: files, OutDir: out,
+		Profile: Profiles["quality"], ProfileName: "quality", Kit: true, Tailwind: bin,
+	}}
+	rep, err := p.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range fake.Calls {
+		switch call.Stage {
+		case prompts.Build:
+			if !strings.Contains(call.System, "# The Faz kit") || !strings.Contains(call.System, "wrench") || strings.Contains(call.System, "{{") {
+				t.Error("build did not get the expanded kit prompt")
+			}
+		case prompts.Plan, prompts.Critique:
+			if !strings.Contains(call.System, "built with the Faz kit") {
+				t.Errorf("%s did not get the kit note", call.Stage)
+			}
+		}
+	}
+	page, _ := os.ReadFile(filepath.Join(out, "index.html"))
+	source, _ := os.ReadFile(filepath.Join(out, "source.html"))
+	if strings.Contains(string(page), "text/tailwindcss") || strings.Contains(string(page), "data-icon") {
+		t.Error("shipped page was not compiled")
+	}
+	for _, want := range []string{".btn-primary", "#9a5b00", "<svg class=", "prefers-color-scheme"} {
+		if !strings.Contains(strings.ToLower(string(page)), strings.ToLower(want)) {
+			t.Errorf("shipped page lacks %q", want)
+		}
+	}
+	if !strings.Contains(string(source), `<style type="text/tailwindcss">`) {
+		t.Error("source lost its tailwind block; edits need it")
+	}
+	for _, f := range rep.FindingsBeforeRepair {
+		if strings.HasPrefix(f.Check, "kit.") || f.Check == "content.cta" || f.Check == "css.tokens" || f.Check == "css.focus" {
+			t.Errorf("unexpected finding: %+v", f)
+		}
+	}
 }

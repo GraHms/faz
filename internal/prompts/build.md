@@ -29,6 +29,7 @@ The user message contains the brief, the page copy and the approved design plan,
 - Size the hero to its content. Do not use `100vh` or `100dvh` for it.
 - Running text stays within about 65ch. Headings get `text-wrap: balance`. Digits that line up in columns get `font-variant-numeric: tabular-nums`.
 - Repeated elements share the same edges, baselines and padding. Text that outgrows its box wraps; it is never clipped.
+- Never break a word in the middle. If a seven-day table or a row of cells cannot fit its words on a phone, stack it into a list instead of squeezing the cells.
 
 # Complete at rest
 

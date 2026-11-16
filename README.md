@@ -79,6 +79,20 @@ Nine first pages from four briefs (honey cooperative, car workshop, restaurant, 
 
 Edit `internal/pipeline/profile.go` to add your own profile.
 
+## Kit mode
+
+`-kit` on the CLI, or `FAZ_KIT=1` for fazd, builds new pages with the Faz kit: shadcn-style components (buttons, badges, cards, a raised card, inputs, an accordion, a dark band, a phone action bar) written as Tailwind classes, with Lucide icons. It raises the polish floor without React or a build step in the browser.
+
+- The build model writes the page with Tailwind utilities and the kit classes from `internal/kit/base.css`, and sets the page's identity in one `<style type="text/tailwindcss">` block that overrides the theme tokens (colors from the plan, fonts, corner radius). Icons are `<i data-icon="name">` from the 150 in `internal/kit/icons`.
+- `internal/kit` then inlines the icons as SVG and runs the Tailwind standalone binary over the page, so the shipped page is plain HTML and CSS: about 25 KB of CSS, no framework.
+- The compile happens wherever a page is assembled, so the review, the repair and every owner edit see and keep a compiled kit page. `source.html` keeps the Tailwind block, which edits change; `index.html` is what ships. A page built in kit mode stays a kit page even if the switch is turned off later.
+- Plan and critique are told what the kit can build; repair and edit are told to keep it. The prompts are `build-kit.md`, `kit-components.md` (the component and section reference), `kit-plan.md` and `kit-edit.md`.
+- It needs the binary: `FAZ_TAILWIND` (or `-tailwind`), else `tailwindcss` on PATH. The Docker image includes a pinned copy. Without it a kit page fails with a `kit.compile` blocker instead of shipping unstyled.
+
+The trade-off is sameness: every kit page shares the shadcn skeleton, so the plan's colors, fonts and one bold move have to carry each client's identity.
+
+First real runs (16 November 2026, quality profile): the restaurant and salon briefs reached the build before the test key ran out of credit, so neither was reviewed or repaired. Plan, critique and build cost $0.63 to $0.66; the kit build stage itself cost $0.09 to $0.10, about what a hand-written build costs, so kit mode changes the look, not the bill. The raw restaurant page scrolled sideways by 23px on a phone, which the review and repair pass exists to catch.
+
 ## Operating it
 
 - **Prompts** live in `internal/prompts/*.md`. Pass `-prompts dir` to override any file without rebuilding.
@@ -184,6 +198,7 @@ Migrations run on start. The web app: `cd web && npm install && npm run dev` (it
 | `FAZ_SIGNUP_GIFT`, `FAZ_PRICE_FIRST_PAGE`, `FAZ_PRICE_EDIT`, `FAZ_PRICE_STRUCTURAL` | 19, 19, 5, 20 | Credits |
 | `FAZ_TOPUP_MIN_MZN`, `FAZ_MZN_PER_CREDIT` | 200, 1 | Top up rules |
 | `FAZ_CHROME`, `FAZ_CHROME_FLAGS`, `FAZ_NO_RENDER` | found on PATH | Render checks |
+| `FAZ_KIT`, `FAZ_TAILWIND` | off, found on PATH | Build new sites with the Faz kit; path to the Tailwind standalone binary (see Kit mode) |
 | `FAZ_PASSWORD_ITERATIONS` | 600000 | PBKDF2 iterations |
 | `FAZ_DATA_DIR` | temp dir | Where the design history file lives |
 | `FAZ_ADMIN_TOKEN` | unset | Unlocks `/v1/admin` (header `X-Faz-Admin`) and the web app's `/admin` pages. At least 24 random characters; unset turns the routes off |
@@ -263,6 +278,8 @@ FAZ_TEST_S3=http://127.0.0.1:9000 go test ./internal/api/
 ```
 
 The pipeline test runs every stage against `examples/fake`, including a real headless render when Chrome is installed: it confirms the sample page overflows on a phone, that the recorded repair fixes it, and that the final status is `ready`.
+
+Kit mode has its own tests, which need the Tailwind binary: `FAZ_TAILWIND=/path/to/tailwindcss go test ./internal/kit ./internal/pipeline`. They compile a page, and run the pipeline in kit mode with the recorded kit page in `examples/fake-kit`. Without the binary they are skipped.
 
 ## Known limits
 

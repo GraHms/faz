@@ -69,6 +69,50 @@ func read(name, overrideDir string) (string, error) {
 	return string(b), nil
 }
 
+// LoadKit returns the system prompt for a stage when the page is built with
+// the Faz kit. The build stage gets its own prompt with the component
+// reference; plan and critique learn what the kit can build; repair and edit
+// learn to keep the page a kit page. icons lists the icon names the kit has.
+func LoadKit(stage, overrideDir string, icons []string) (string, error) {
+	if stage != Build {
+		body, err := Load(stage, overrideDir)
+		if err != nil {
+			return "", err
+		}
+		var extra []string
+		switch stage {
+		case Plan, Critique:
+			extra = []string{"kit-plan.md"}
+		case Repair, Edit:
+			extra = []string{"kit-edit.md", "kit-components.md"}
+		}
+		for _, name := range extra {
+			b, err := read(name, overrideDir)
+			if err != nil {
+				return "", fmt.Errorf("prompt %s: %w", name, err)
+			}
+			body += "\n" + strings.ReplaceAll(strings.TrimSpace(b), iconsToken, strings.Join(icons, ", ")) + "\n"
+		}
+		return body, nil
+	}
+	body, err := read("build-kit.md", overrideDir)
+	if err != nil {
+		return "", fmt.Errorf("prompt build-kit: %w", err)
+	}
+	ref, err := read("kit-components.md", overrideDir)
+	if err != nil {
+		return "", fmt.Errorf("prompt kit-components: %w", err)
+	}
+	body = strings.ReplaceAll(body, kitToken, strings.TrimSpace(ref))
+	body = strings.ReplaceAll(body, iconsToken, strings.Join(icons, ", "))
+	return strings.TrimSpace(body) + "\n", nil
+}
+
+const (
+	kitToken   = "{{KIT}}"
+	iconsToken = "{{ICONS}}"
+)
+
 // demote pushes every Markdown heading in the shared defaults file one level
 // down, so it nests under the prompt that includes it.
 func demote(md string) string {
