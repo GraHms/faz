@@ -43,6 +43,8 @@ var Profiles = map[string]Profile{
 		prompts.Build:    {Sonnet, "medium", 64_000},
 		prompts.Review:   {Opus, "medium", 16_000},
 		prompts.Repair:   {Sonnet, "medium", 64_000},
+		prompts.Classify: {Haiku, "low", 4_000},
+		prompts.Edit:     {Sonnet, "low", 64_000},
 	},
 	"economy": {
 		prompts.Intake:   {Haiku, "medium", 8_000},
@@ -52,6 +54,8 @@ var Profiles = map[string]Profile{
 		prompts.Build:    {Sonnet, "medium", 64_000},
 		prompts.Review:   {Sonnet, "medium", 16_000},
 		prompts.Repair:   {Sonnet, "medium", 64_000},
+		prompts.Classify: {Haiku, "low", 4_000},
+		prompts.Edit:     {Sonnet, "low", 64_000},
 	},
 }
 

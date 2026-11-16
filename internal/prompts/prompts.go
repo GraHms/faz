@@ -25,10 +25,13 @@ const (
 	Build    = "build"
 	Review   = "review"
 	Repair   = "repair"
+	Classify = "classify" // product: sorts a chat message before anything is charged
+	Edit     = "edit"     // product: applies one owner request to a built page
 )
 
-// Stages lists every stage in pipeline order.
-var Stages = []string{Intake, Content, Plan, Critique, Build, Review, Repair}
+// Stages lists every stage: the build pipeline in order, then the stages the
+// product uses for chat edits.
+var Stages = []string{Intake, Content, Plan, Critique, Build, Review, Repair, Classify, Edit}
 
 const defaultsToken = "{{DEFAULTS}}"
 

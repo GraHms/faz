@@ -17,6 +17,11 @@ The user message contains the client's request as they wrote it, followed by a l
 7. Classify `page_kind` as one of: landing, product, event, portfolio, menu, organization, campaign, tool, other.
 8. For each attached file, record what it is (`logo`, `photo`, `illustration`, `document`, `other`) and one line on what it shows, if you can see it.
 9. Keep `sections_suggested` to what the client asked for plus what the page job clearly requires. Three to seven items.
+10. Write up to three `questions` for the client, in `language`, chosen from the gaps that would most change the page. The client answers them before anything is built, often on a phone, so each question must be answerable in a few seconds.
+    - Ask for facts first: the WhatsApp number, prices, opening hours, the area served, whether they have their own photos. Never ask for something the request already answers.
+    - Ask at most one question about how the site should feel. Its options describe moods drawn from the subject's own world (for a fish restaurant: "Cais de pescadores", "Mesa de família"), never color names or generic labels like "moderno" or "elegante". Always add a last option that lets you decide.
+    - `kind` is `choice` (pick one), `multi` (pick several), `phone` or `text`. Choice questions have two to four options, each a short label.
+    - If the request already has everything a good page needs, return an empty list.
 
 # Output
 
@@ -43,6 +48,10 @@ Return one JSON object inside a single ```json fenced block and nothing else. Us
   "sections_suggested": ["hero", "products", "visit"],
   "assets": [{"file": "logo.png", "kind": "logo", "note": "round green logo with a bee"}],
   "gaps": ["What number should customers call or message?"],
-  "assumptions": ["Assumed: the page targets buyers in Maputo."]
+  "assumptions": ["Assumed: the page targets buyers in Maputo."],
+  "questions": [
+    {"id": "whatsapp", "text": "Para que número vão as mensagens de WhatsApp?", "hint": "O botão do site abre uma conversa contigo.", "kind": "phone", "options": []},
+    {"id": "fotos", "text": "Tens fotografias tuas do espaço ou dos produtos?", "hint": "Fotos reais ajudam mais do que qualquer texto.", "kind": "choice", "options": [{"value": "sim", "label": "Sim, vou enviar"}, {"value": "nao", "label": "Ainda não"}]}
+  ]
 }
 ```

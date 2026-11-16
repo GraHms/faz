@@ -247,7 +247,7 @@ func (p *Pipeline) verifyReviewRepair(ctx context.Context, b *spec.Brief, c *spe
 	if err := p.writeFile("index.html", page); err != nil {
 		return err
 	}
-	findings, shots, err := p.verify(ctx, b, c, plan, page, "pre-repair")
+	findings, shots, err := p.verify(ctx, b, c, plan, page, "pre-repair", true)
 	if err != nil {
 		return err
 	}
@@ -282,7 +282,7 @@ func (p *Pipeline) verifyReviewRepair(ctx context.Context, b *spec.Brief, c *spe
 			if err := p.writeFile("index.html", page); err != nil {
 				return err
 			}
-			if findings, _, err = p.verify(ctx, b, c, plan, page, "final"); err != nil {
+			if findings, _, err = p.verify(ctx, b, c, plan, page, "final", true); err != nil {
 				return err
 			}
 		}
@@ -304,14 +304,30 @@ func (p *Pipeline) repair(ctx context.Context, source string, review *spec.Revie
 	if err != nil {
 		return source, nil, err
 	}
+	out, applied, err := applyResponse(resp.Text, source)
+	if err != nil {
+		return source, nil, fmt.Errorf("repair: %w", err)
+	}
+	return out, applied.RepairReport, nil
+}
+
+// applied describes what an edit or repair response did to the document.
+type applied struct {
+	*RepairReport
+	Summary string
+}
+
+// applyResponse turns an edit or repair response into a new document: either
+// find and replace edits applied to source, or a whole replacement document.
+func applyResponse(text, source string) (string, applied, error) {
 	rr := &RepairReport{}
-	if _, ok := llm.Fenced(resp.Text, "json"); ok {
+	if _, ok := llm.Fenced(text, "json"); ok {
 		var e spec.Edits
-		if err := llm.DecodeJSON(resp.Text, &e); err != nil {
-			return source, nil, fmt.Errorf("repair: %w", err)
+		if err := llm.DecodeJSON(text, &e); err != nil {
+			return source, applied{}, err
 		}
 		if err := e.Validate(); err != nil {
-			return source, nil, fmt.Errorf("repair: %w", err)
+			return source, applied{}, err
 		}
 		edits := make([]edit.Edit, len(e.Edits))
 		for i, x := range e.Edits {
@@ -319,17 +335,24 @@ func (p *Pipeline) repair(ctx context.Context, source string, review *spec.Revie
 		}
 		out, res := edit.Apply(source, edits)
 		rr.Mode, rr.Applied, rr.Failed = "edits", res.Applied, res.Failed
-		for _, s := range e.Skipped {
-			rr.Skipped = append(rr.Skipped, s.Issue+": "+s.Reason)
+		for _, sk := range e.Skipped {
+			rr.Skipped = append(rr.Skipped, sk.Issue+": "+sk.Reason)
 		}
-		return out, rr, nil
+		return out, applied{RepairReport: rr, Summary: strings.TrimSpace(e.Summary)}, nil
 	}
-	doc, err := llm.ExtractHTML(resp.Text)
+	doc, err := llm.ExtractHTML(text)
 	if err != nil {
-		return source, nil, fmt.Errorf("repair returned neither edits nor a document: %w", err)
+		return source, applied{}, fmt.Errorf("neither edits nor a document: %w", err)
+	}
+	summary := ""
+	for _, line := range strings.Split(text, "\n") {
+		if t := strings.TrimSpace(line); strings.HasPrefix(t, "Summary:") {
+			summary = strings.TrimSpace(strings.TrimPrefix(t, "Summary:"))
+			break
+		}
 	}
 	rr.Mode = "rewrite"
-	return doc, rr, nil
+	return doc, applied{RepairReport: rr, Summary: summary}, nil
 }
 
 // ---- verification ----
@@ -370,18 +393,23 @@ func (p *Pipeline) passes(plan *spec.Plan) []pass {
 	return ps
 }
 
-func (p *Pipeline) verify(ctx context.Context, b *spec.Brief, c *spec.Copy, plan *spec.Plan, page, phase string) ([]check.Finding, []shot, error) {
+func (p *Pipeline) verify(ctx context.Context, b *spec.Brief, c *spec.Copy, plan *spec.Plan, page, phase string, shots bool) ([]check.Finding, []shot, error) {
 	findings := check.Static(page, plan, c)
 	if p.Opt.Chrome == nil {
 		return findings, nil, nil
 	}
-	work := filepath.Join(p.Opt.OutDir, ".work")
-	defer os.RemoveAll(work)
-	shotDir := filepath.Join(p.Opt.OutDir, "screenshots", phase)
-	if err := os.MkdirAll(shotDir, 0o755); err != nil {
+	work, err := os.MkdirTemp("", "faz-render-")
+	if err != nil {
 		return nil, nil, err
 	}
-	var shots []shot
+	defer os.RemoveAll(work)
+	shotDir := filepath.Join(p.Opt.OutDir, "screenshots", phase)
+	if shots {
+		if err := os.MkdirAll(shotDir, 0o755); err != nil {
+			return nil, nil, err
+		}
+	}
+	var taken []shot
 	seen := map[string]bool{}
 	for _, ps := range p.passes(plan) {
 		m, err := p.Opt.Chrome.Measure(ctx, page, work, ps.label, ps.width, ps.theme)
@@ -394,6 +422,9 @@ func (p *Pipeline) verify(ctx context.Context, b *spec.Brief, c *spec.Copy, plan
 				seen[key] = true
 				findings = append(findings, f)
 			}
+		}
+		if !shots {
+			continue
 		}
 		height := m.DocHeight
 		if height > ps.maxCSS {
@@ -415,11 +446,11 @@ func (p *Pipeline) verify(ctx context.Context, b *spec.Brief, c *spec.Copy, plan
 			if err := os.WriteFile(filepath.Join(shotDir, name), t, 0o644); err != nil {
 				return nil, nil, err
 			}
-			shots = append(shots, shot{Label: ps.label, Tile: i + 1, Of: total, JPEG: t})
+			taken = append(taken, shot{Label: ps.label, Tile: i + 1, Of: total, JPEG: t})
 		}
 		p.rep.Outputs["screenshots/"+phase] = filepath.Join(p.Opt.OutDir, "screenshots", phase)
 	}
-	return findings, shots, nil
+	return findings, taken, nil
 }
 
 func (p *Pipeline) reviewParts(b *spec.Brief, plan *spec.Plan, findings []check.Finding, shots []shot) []llm.Part {

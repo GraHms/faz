@@ -14,19 +14,35 @@ import (
 
 // Brief is the intake stage's structured reading of the client's request.
 type Brief struct {
-	Language          string   `json:"language"`
-	PageKind          string   `json:"page_kind"`
-	Subject           string   `json:"subject"`
-	Audience          string   `json:"audience"`
-	PageJob           string   `json:"page_job"`
-	PrimaryAction     Action   `json:"primary_action"`
-	ProvidedFacts     []Fact   `json:"provided_facts"`
-	Brand             Brand    `json:"brand"`
-	RequestedStyle    *string  `json:"requested_style"`
-	SectionsSuggested []string `json:"sections_suggested"`
-	Assets            []Asset  `json:"assets"`
-	Gaps              []string `json:"gaps"`
-	Assumptions       []string `json:"assumptions"`
+	Language          string     `json:"language"`
+	PageKind          string     `json:"page_kind"`
+	Subject           string     `json:"subject"`
+	Audience          string     `json:"audience"`
+	PageJob           string     `json:"page_job"`
+	PrimaryAction     Action     `json:"primary_action"`
+	ProvidedFacts     []Fact     `json:"provided_facts"`
+	Brand             Brand      `json:"brand"`
+	RequestedStyle    *string    `json:"requested_style"`
+	SectionsSuggested []string   `json:"sections_suggested"`
+	Assets            []Asset    `json:"assets"`
+	Gaps              []string   `json:"gaps"`
+	Assumptions       []string   `json:"assumptions"`
+	Questions         []Question `json:"questions"`
+}
+
+// Question is one clarifying question for the client, asked before the
+// first build. Answering is free.
+type Question struct {
+	ID      string   `json:"id"`
+	Text    string   `json:"text"`
+	Hint    string   `json:"hint"`
+	Kind    string   `json:"kind"` // choice, multi, phone or text
+	Options []Option `json:"options"`
+}
+
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
 }
 
 type Action struct {
@@ -72,6 +88,28 @@ func (b *Brief) Validate() error {
 	}
 	if strings.TrimSpace(b.PageJob) == "" {
 		errs = append(errs, "page_job is empty")
+	}
+	if len(b.Questions) > 3 {
+		errs = append(errs, fmt.Sprintf("%d questions; ask at most 3", len(b.Questions)))
+	}
+	ids := map[string]bool{}
+	for i, q := range b.Questions {
+		if q.ID == "" || ids[q.ID] {
+			errs = append(errs, fmt.Sprintf("question %d needs a unique id", i))
+		}
+		ids[q.ID] = true
+		if strings.TrimSpace(q.Text) == "" {
+			errs = append(errs, fmt.Sprintf("question %q has no text", q.ID))
+		}
+		switch q.Kind {
+		case "choice", "multi":
+			if n := len(q.Options); n < 2 || n > 5 {
+				errs = append(errs, fmt.Sprintf("question %q has %d options; give 2 to 4", q.ID, n))
+			}
+		case "phone", "text":
+		default:
+			errs = append(errs, fmt.Sprintf("question %q has kind %q; use choice, multi, phone or text", q.ID, q.Kind))
+		}
 	}
 	return joinErrs(errs)
 }
@@ -367,9 +405,40 @@ func (r *Review) Validate() error {
 	return joinErrs(errs)
 }
 
-// Edits is the repair stage's output when it returns edits.
+// Classification is the classify stage's reading of one chat message.
+type Classification struct {
+	Kind        string   `json:"kind"` // edit, structural, vague or other
+	Instruction string   `json:"instruction"`
+	Reply       string   `json:"reply"`
+	Options     []string `json:"options"`
+}
+
+// Chargeable reports whether acting on the message costs credits.
+func (c *Classification) Chargeable() bool { return c.Kind == "edit" || c.Kind == "structural" }
+
+func (c *Classification) Validate() error {
+	switch c.Kind {
+	case "edit", "structural":
+		if strings.TrimSpace(c.Instruction) == "" {
+			return fmt.Errorf("kind %s needs an instruction", c.Kind)
+		}
+	case "vague", "other":
+		if strings.TrimSpace(c.Reply) == "" {
+			return fmt.Errorf("kind %s needs a reply for the owner", c.Kind)
+		}
+		if c.Kind == "vague" && (len(c.Options) < 2 || len(c.Options) > 4) {
+			return fmt.Errorf("a vague message needs 2 to 4 quick replies, got %d", len(c.Options))
+		}
+	default:
+		return fmt.Errorf("kind %q must be edit, structural, vague or other", c.Kind)
+	}
+	return nil
+}
+
+// Edits is the repair and edit stages' output when they return edits.
 type Edits struct {
-	Edits []struct {
+	Summary string `json:"summary,omitempty"`
+	Edits   []struct {
 		Find    string `json:"find"`
 		Replace string `json:"replace"`
 	} `json:"edits"`

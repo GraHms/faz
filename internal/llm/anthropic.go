@@ -111,7 +111,11 @@ func (a *Anthropic) buildBody(req Request) ([]byte, error) {
 		if strings.TrimSpace(p.Text) == "" {
 			continue
 		}
-		content = append(content, map[string]any{"type": "text", "text": p.Text})
+		block := map[string]any{"type": "text", "text": p.Text}
+		if p.Cache {
+			block["cache_control"] = apiCache{Type: "ephemeral", TTL: a.CacheTTL}
+		}
+		content = append(content, block)
 	}
 	if len(content) == 0 {
 		return nil, errors.New("request has an empty user message")
