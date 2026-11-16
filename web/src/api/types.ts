@@ -8,6 +8,7 @@ export interface User {
   email: string;
   name: string;
   created_at: ISODate;
+  invite_code?: string;
 }
 
 export interface Account {
@@ -65,6 +66,9 @@ export interface Site {
   published_at?: ISODate;
   created_at: ISODate;
   updated_at: ISODate;
+  /** Set when the Faz team took the site off the air; publishing is refused. */
+  taken_down_at?: ISODate;
+  takedown_reason?: string;
 }
 
 export type QuestionKind = 'choice' | 'multi' | 'phone' | 'text';
@@ -298,4 +302,102 @@ export interface TelemetryOverview {
   money: Money;
   by_stage: UsageGroup[];
   sites: OverviewSite[];
+}
+
+// ---- Operator controls (internal/product/admin.go) ----
+
+/** The admin key, and who is acting: every write goes to the audit log under this name. */
+export interface AdminAuth {
+  key: string;
+  operator?: string;
+}
+
+export interface PublicConfig {
+  beta_required: boolean;
+}
+
+export interface AdminSettings {
+  beta_required: boolean;
+  builds_paused: boolean;
+  pause_reason: string;
+  /** 0 means no cap. */
+  daily_spend_cap_usd: number;
+  reserved_names: string[];
+  blocked_words: string[];
+}
+
+export interface AdminStatus extends AdminSettings {
+  spend_today_usd: number;
+  cap_reached: boolean;
+  /** False when paused by hand or by the daily cap. */
+  models_open: boolean;
+}
+
+export type SettingsPatch = Partial<AdminSettings>;
+
+export interface Invite {
+  code: string;
+  note: string;
+  max_uses: number;
+  uses: number;
+  bonus_credits: number;
+  expires_at?: ISODate;
+  disabled_at?: ISODate;
+  created_by: string;
+  created_at: ISODate;
+}
+
+export interface NewInvite {
+  /** Empty: the server generates one like FAZ-7KQ2-M9XA. */
+  code?: string;
+  note?: string;
+  max_uses: number;
+  bonus_credits: number;
+  expires_at?: ISODate;
+}
+
+export interface AdminUser extends User {
+  invite_code?: string;
+  suspended_at?: ISODate;
+  suspended_reason?: string;
+}
+
+export interface AdminUserRow extends AdminUser {
+  balance: number;
+  sites: number;
+  last_msisdn?: string;
+}
+
+export interface AuditEntry {
+  id: number;
+  operator: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  reason: string;
+  details: Record<string, unknown>;
+  created_at: ISODate;
+}
+
+export interface AdminUserDetail {
+  user: AdminUser;
+  balance: number;
+  sessions: number;
+  sites: Site[];
+  ledger: LedgerEntry[];
+  payments: Payment[];
+  audit: AuditEntry[];
+}
+
+export interface AdminSiteRow extends Site {
+  owner_email: string;
+}
+
+export interface CreditAdjustment {
+  /** Positive gives, negative removes. */
+  delta: number;
+  /** What the owner reads in their movements; a standard line when empty. */
+  public_note?: string;
+  /** Makes a repeated click harmless. */
+  request_id: string;
 }

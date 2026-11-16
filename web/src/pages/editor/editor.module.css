@@ -189,6 +189,9 @@
 }
 
 /* Chat */
+.banner {
+  padding: 12px 12px 0;
+}
 .messages {
   flex: 1;
   overflow: auto;

@@ -83,6 +83,129 @@ func (s *Server) Handler() http.Handler {
 		s.respond(w, r, http.StatusOK, v, err)
 	})
 
+	// Operator actions. Every write names its operator (X-Faz-Operator) and
+	// gives a reason in the body; both go to the audit log.
+	op := func(r *http.Request) product.Operator {
+		return product.Operator{Name: r.Header.Get("X-Faz-Operator")}
+	}
+	admin("GET /v1/admin/status", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Svc.Status(r.Context())
+		s.respond(w, r, http.StatusOK, v, err)
+	})
+	admin("POST /v1/admin/settings", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			product.SettingsPatch
+			Reason string `json:"reason"`
+		}
+		if !s.decode(w, r, &in) {
+			return
+		}
+		if _, err := s.Svc.UpdateSettings(r.Context(), op(r), in.Reason, in.SettingsPatch); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		v, err := s.Svc.Status(r.Context())
+		s.respond(w, r, http.StatusOK, v, err)
+	})
+	admin("GET /v1/admin/invites", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Svc.Invites(r.Context())
+		s.respond(w, r, http.StatusOK, map[string]any{"invites": v}, err)
+	})
+	admin("POST /v1/admin/invites", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			product.NewInvite
+			Reason string `json:"reason"`
+		}
+		if !s.decode(w, r, &in) {
+			return
+		}
+		v, err := s.Svc.CreateInvite(r.Context(), op(r), in.Reason, in.NewInvite)
+		s.respond(w, r, http.StatusCreated, v, err)
+	})
+	admin("POST /v1/admin/invites/{code}/disable", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Reason string }
+		if !s.decode(w, r, &in) {
+			return
+		}
+		v, err := s.Svc.DisableInvite(r.Context(), op(r), in.Reason, r.PathValue("code"))
+		s.respond(w, r, http.StatusOK, v, err)
+	})
+	admin("GET /v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Svc.AdminUsers(r.Context(), r.URL.Query().Get("q"))
+		s.respond(w, r, http.StatusOK, map[string]any{"users": v}, err)
+	})
+	admin("GET /v1/admin/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Svc.AdminUser(r.Context(), r.PathValue("id"))
+		s.respond(w, r, http.StatusOK, v, err)
+	})
+	admin("POST /v1/admin/users/{id}/credits", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			product.CreditAdjustment
+			Reason string `json:"reason"`
+		}
+		if !s.decode(w, r, &in) {
+			return
+		}
+		bal, err := s.Svc.AdjustCredits(r.Context(), op(r), in.Reason, r.PathValue("id"), in.CreditAdjustment)
+		s.respond(w, r, http.StatusOK, map[string]any{"balance": bal}, err)
+	})
+	admin("POST /v1/admin/users/{id}/suspend", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Suspended bool   `json:"suspended"`
+			Reason    string `json:"reason"`
+		}
+		if !s.decode(w, r, &in) {
+			return
+		}
+		v, err := s.Svc.SuspendUser(r.Context(), op(r), in.Reason, r.PathValue("id"), in.Suspended)
+		s.respond(w, r, http.StatusOK, v, err)
+	})
+	admin("POST /v1/admin/users/{id}/sign-out", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Reason string }
+		if !s.decode(w, r, &in) {
+			return
+		}
+		n, err := s.Svc.SignOutEverywhere(r.Context(), op(r), in.Reason, r.PathValue("id"))
+		s.respond(w, r, http.StatusOK, map[string]any{"sessions_ended": n}, err)
+	})
+	admin("POST /v1/admin/jobs/{id}/refund", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Reason string }
+		if !s.decode(w, r, &in) {
+			return
+		}
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			s.fail(w, r, &product.Error{Status: http.StatusNotFound, Code: "not_found", Message: "Não encontrado."})
+			return
+		}
+		n, err := s.Svc.RefundJob(r.Context(), op(r), in.Reason, id)
+		s.respond(w, r, http.StatusOK, map[string]any{"credits": n}, err)
+	})
+	admin("GET /v1/admin/sites", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Svc.AdminSites(r.Context(), r.URL.Query().Get("q"))
+		s.respond(w, r, http.StatusOK, map[string]any{"sites": v}, err)
+	})
+	admin("POST /v1/admin/sites/{id}/takedown", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Reason string }
+		if !s.decode(w, r, &in) {
+			return
+		}
+		v, err := s.Svc.TakeDown(r.Context(), op(r), in.Reason, r.PathValue("id"))
+		s.respond(w, r, http.StatusOK, v, err)
+	})
+	admin("POST /v1/admin/sites/{id}/restore", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Reason string }
+		if !s.decode(w, r, &in) {
+			return
+		}
+		v, err := s.Svc.Restore(r.Context(), op(r), in.Reason, r.PathValue("id"))
+		s.respond(w, r, http.StatusOK, v, err)
+	})
+	admin("GET /v1/admin/audit", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Svc.AuditLog(r.Context(), r.URL.Query().Get("target_type"), r.URL.Query().Get("target_id"))
+		s.respond(w, r, http.StatusOK, map[string]any{"entries": v}, err)
+	})
+
 	open("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Svc.Store.DB.PingContext(r.Context()); err != nil {
 			s.fail(w, r, err)
@@ -90,15 +213,23 @@ func (s *Server) Handler() http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	// What the app needs before sign in: whether sign up needs an invite code.
+	open("GET /v1/config", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Svc.PublicConfig(r.Context())
+		s.respond(w, r, http.StatusOK, v, err)
+	})
 	open("GET /v1/pricing", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.Svc.Cfg.Pricing)
 	})
 	open("POST /v1/auth/signup", func(w http.ResponseWriter, r *http.Request) {
-		var in struct{ Name, Email, Password string }
+		var in struct {
+			Name, Email, Password string
+			Invite                string `json:"invite_code"`
+		}
 		if !s.decode(w, r, &in) {
 			return
 		}
-		sess, err := s.Svc.Signup(r.Context(), in.Name, in.Email, in.Password)
+		sess, err := s.Svc.Signup(r.Context(), in.Name, in.Email, in.Password, in.Invite)
 		s.respond(w, r, http.StatusCreated, sess, err)
 	})
 	open("POST /v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +395,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		if origin := r.Header.Get("Origin"); origin != "" && s.allowed(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Faz-Admin")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Faz-Admin, X-Faz-Operator")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Max-Age", "600")
 			if r.Method == http.MethodOptions {

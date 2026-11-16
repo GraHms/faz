@@ -138,7 +138,7 @@ function Workspace({ view }: { view: SiteView }) {
             </button>
           ))}
         </div>
-        {view.live_url && (
+        {view.live_url && !site.taken_down_at && (
           <a className={s.liveLink} href={view.live_url} target="_blank" rel="noopener noreferrer">
             Abrir
           </a>
@@ -146,7 +146,7 @@ function Workspace({ view }: { view: SiteView }) {
         <Button size="sm" variant="secondary" className={s.domainBtn} onClick={() => setDomain(true)}>
           Ligar domínio <Soon />
         </Button>
-        <Button size="sm" onClick={() => setPublishing(true)} disabled={site.current_version === 0}>
+        <Button size="sm" onClick={() => setPublishing(true)} disabled={site.current_version === 0 || !!site.taken_down_at}>
           Publicar
         </Button>
       </header>
@@ -308,6 +308,14 @@ function Chat({
 
   return (
     <>
+      {site.taken_down_at && (
+        <div className={s.banner}>
+          <Notice>
+            A equipa Faz retirou este site do ar{site.takedown_reason ? `: ${site.takedown_reason}` : ''}. Não pode ser publicado até ser reposto. Se achas que é um
+            engano, fala connosco.
+          </Notice>
+        </div>
+      )}
       <div className={s.messages} ref={scroller}>
         <div className={s.userMsg}>{site.prompt}</div>
         {view.assets.length > 0 && (

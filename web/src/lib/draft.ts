@@ -43,6 +43,33 @@ export const draft = {
 
 // The backend (internal/product/images.go) reads JPEG, PNG and WebP only.
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+// An invite link (/criar-conta?convite=CODE) may land on any page first;
+// the code waits here until sign up.
+const INVITE = 'faz.invite';
+
+export const invite = {
+  get(): string {
+    try {
+      return sessionStorage.getItem(INVITE) ?? '';
+    } catch {
+      return '';
+    }
+  },
+  set(code: string) {
+    try {
+      if (code) sessionStorage.setItem(INVITE, code);
+      else sessionStorage.removeItem(INVITE);
+    } catch {
+      /* the field can still be typed */
+    }
+  },
+  /** Keeps ?convite= from the current URL, if there is one. */
+  capture(search: string) {
+    const code = new URLSearchParams(search).get('convite');
+    if (code) invite.set(code.trim().toUpperCase());
+  },
+};
+
 export const imageAccept = imageTypes.join(',');
 export const maxImageBytes = 15 * 1024 * 1024;
 

@@ -55,6 +55,19 @@ It keeps the rules the screens depend on: the 19 credit gift, free questions, ch
 
 These have no backend, so the app says so instead of pretending. Custom domains are shown wherever the prototype had them, marked with the shared `<Soon />` badge ("Em breve"): the pricing cell, the domains page, the publish dialog, "Ligar domínio" in the editor and the dashboard's Domínios tab, which lists the free addresses in use. Google sign in and password reset are not offered. The landing examples are labelled as starting points, not as customer sites.
 
+## Admin pages
+
+`/admin` holds the operator tools, behind the admin key and the operator's name (both kept in `sessionStorage` for the tab, sent as `X-Faz-Admin` and `X-Faz-Operator`, never with an owner's session):
+
+- **Telemetria** (`/admin`, `/admin/sites/:id`): cost per site, stage and model.
+- **Utilizadores** (`/admin/utilizadores`): search by email, name or M-Pesa number; give or remove credits, refund a job, suspend, end sessions.
+- **Sites** (`/admin/sites`): search, take off the air, restore.
+- **Convites** (`/admin/convites`): create codes with uses, bonus and end date; copy the link; disable.
+- **Controlo** (`/admin/controlo`): close the beta, pause the models, set the daily spend cap with today's spend on a meter, edit reserved names and blocked words.
+- **Registo** (`/admin/registo`): the audit log.
+
+Every action asks for a reason in a confirmation dialog; the reason never reaches the owner. Owners see the effects: the invite field on sign up (filled from `?convite=`), "em manutenção" while models are paused, and the takedown notice in the editor.
+
 ## Telemetry pages
 
 `/admin` and `/admin/sites/:id` show, for operators, what each site cost: tokens, cost per stage and model, credits charged and margin (see Telemetry in the root README). They ask for the admin key (fazd's `FAZ_ADMIN_TOKEN`), keep it in `sessionStorage` for the tab, and send it as `X-Faz-Admin`, never together with an owner's session. Nothing links to them from the owner screens. In mock mode any key works, and the mock records invented but plausible token counts for every operation.
@@ -71,4 +84,4 @@ npm run build && npx vite preview --port 4173 &
 FAZ_WEB=http://127.0.0.1:4173 CHROME=/usr/bin/google-chrome npm run e2e
 ```
 
-The e2e script signs up, answers the questions, waits for the build, hits the 402, pays with the mock wallet, edits, publishes, checks the dashboard and payments, repeats key screens at phone size and signs out and in. It fails on any page error, console error or failed request from the app itself (requests made by the generated page inside the preview are its own). Screenshots land in `e2e/screenshots/`. With `FAZ_ADMIN_TOKEN` set, it also opens the telemetry pages, tries a wrong key, and checks the site page against the API.
+The e2e script signs up, answers the questions, waits for the build, hits the 402, pays with the mock wallet, edits, publishes, checks the dashboard and payments, repeats key screens at phone size and signs out and in. It fails on any page error, console error or failed request from the app itself (requests made by the generated page inside the preview are its own). Screenshots land in `e2e/screenshots/`. With `FAZ_ADMIN_TOKEN` set, it also opens the telemetry pages, tries a wrong key, checks the site page against the API, and walks the operator tools: it creates an invite, closes the beta, signs a new owner up through the invite link and checks the bonus, gives credits, pauses the models and sees the owner told so, takes a site down and restores it, and reads the audit log. It resets the settings to an open beta first, so runs can share a database.

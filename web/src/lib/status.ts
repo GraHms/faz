@@ -8,7 +8,8 @@ export interface StatusLabel {
 }
 
 /** How a site's state reads in a pill, on the dashboard and in the editor. */
-export function siteStatus(site: Pick<Site, 'status' | 'current_version' | 'published_version'>): StatusLabel {
+export function siteStatus(site: Pick<Site, 'status' | 'current_version' | 'published_version' | 'taken_down_at'>): StatusLabel {
+  if (site.taken_down_at) return { label: 'Retirado do ar', tone: 'red' };
   switch (site.status) {
     case 'questions':
       return { label: 'À espera de respostas', tone: 'dim' };

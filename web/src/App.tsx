@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { RequireAuth } from './auth/session';
 import { Spinner } from './components/ui';
 import Landing from './pages/Landing';
+import { invite } from './lib/draft';
 
 // The marketing page loads first; app screens load when visited.
 const Pricing = lazy(() => import('./pages/Pricing'));
@@ -17,6 +18,12 @@ const Checkout = lazy(() => import('./pages/Checkout'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const AdminOverview = lazy(() => import('./pages/admin/Admin').then((m) => ({ default: m.AdminOverview })));
 const AdminSite = lazy(() => import('./pages/admin/Admin').then((m) => ({ default: m.AdminSite })));
+const AdminUsers = lazy(() => import('./pages/admin/Users').then((m) => ({ default: m.AdminUsers })));
+const AdminUser = lazy(() => import('./pages/admin/Users').then((m) => ({ default: m.AdminUser })));
+const AdminSites = lazy(() => import('./pages/admin/Sites').then((m) => ({ default: m.AdminSites })));
+const AdminInvites = lazy(() => import('./pages/admin/Invites').then((m) => ({ default: m.AdminInvites })));
+const AdminControl = lazy(() => import('./pages/admin/Control').then((m) => ({ default: m.AdminControl })));
+const AdminAudit = lazy(() => import('./pages/admin/Audit').then((m) => ({ default: m.AdminAudit })));
 
 function Loading() {
   return (
@@ -28,7 +35,8 @@ function Loading() {
 
 /** Scrolls to the top on navigation, or to the #hash when there is one. */
 function ScrollManager() {
-  const { pathname, hash } = useLocation();
+  const { pathname, hash, search } = useLocation();
+  useEffect(() => invite.capture(search), [search]);
   useEffect(() => {
     if (hash) {
       const el = document.getElementById(hash.slice(1));
@@ -60,7 +68,13 @@ export function AppRoutes() {
         <Route path="/recarregar" element={authed(<Checkout />)} />
         {/* Operators: guarded by the admin key, not by an owner session. */}
         <Route path="/admin" element={<AdminOverview />} />
+        <Route path="/admin/sites" element={<AdminSites />} />
         <Route path="/admin/sites/:id" element={<AdminSite />} />
+        <Route path="/admin/utilizadores" element={<AdminUsers />} />
+        <Route path="/admin/utilizadores/:id" element={<AdminUser />} />
+        <Route path="/admin/convites" element={<AdminInvites />} />
+        <Route path="/admin/controlo" element={<AdminControl />} />
+        <Route path="/admin/registo" element={<AdminAudit />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

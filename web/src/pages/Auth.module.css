@@ -108,3 +108,17 @@
   font-size: var(--text-md);
   color: var(--muted);
 }
+
+.linkBtn {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: var(--text-md);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.linkBtn:hover {
+  color: var(--text);
+}

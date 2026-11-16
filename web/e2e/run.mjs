@@ -23,13 +23,14 @@ const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-san
 // Only the app is checked here. Requests made by the generated page inside
 // the preview iframe (its fonts, the fixture's missing logo) are its own.
 let expect401 = false;
+let expect503 = false;
 function watch(page, label) {
   const app = (url) => url.startsWith(BASE);
   page.on('pageerror', (e) => problems.push(`${label}: page error: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() !== 'error' || !app(m.location().url || BASE)) return;
     // The 402 for the edit without credits and the 401 for a wrong password are part of the journey.
-    if (/status of 402/.test(m.text()) || (expect401 && /status of 401/.test(m.text()))) return;
+    if (/status of 402/.test(m.text()) || (expect401 && /status of 401/.test(m.text())) || (expect503 && /status of 503/.test(m.text()))) return;
     problems.push(`${label}: console: ${m.text()}`);
   });
   page.on('requestfailed', (r) => {
@@ -53,6 +54,17 @@ function step(name) {
 const desktop = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 1, locale: 'pt-PT' });
 const page = await desktop.newPage();
 watch(page, 'desktop');
+
+// Operator settings live in the database; start every run from an open beta
+// with the models running, whatever an earlier run left behind.
+if (process.env.FAZ_ADMIN_TOKEN) {
+  const r = await fetch(BASE + '/v1/admin/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Faz-Admin': process.env.FAZ_ADMIN_TOKEN, 'X-Faz-Operator': 'e2e' },
+    body: JSON.stringify({ beta_required: false, builds_paused: false, daily_spend_cap_usd: 0, reason: 'Preparar o teste' }),
+  });
+  if (!r.ok) throw new Error(`reset settings: ${r.status}`);
+}
 
 step('landing');
 await page.goto(BASE + '/');
@@ -191,10 +203,12 @@ if (adminKey) {
   await page.goto(BASE + '/admin');
   expect401 = true; // a wrong key is refused with 401
   await page.getByLabel('Chave de administração').fill('errada');
+  await page.getByLabel('O teu nome').fill('Ismael');
   await page.getByRole('button', { name: 'Entrar' }).click();
   await page.getByText('Chave errada').waitFor();
   expect401 = false;
   await page.getByLabel('Chave de administração').fill(adminKey);
+  await page.getByLabel('O teu nome').fill('Ismael');
   await page.getByRole('button', { name: 'Entrar' }).click();
   await page.getByRole('heading', { name: 'Por etapa e modelo' }).waitFor();
   await shot(page, 'telemetry');
@@ -213,6 +227,105 @@ if (adminKey) {
   await page.screenshot({ path: join(OUT, `${String(++n).padStart(2, '0')}-telemetry-site-full.png`), fullPage: true });
 } else {
   console.log('FAZ_ADMIN_TOKEN not set: telemetry screens skipped');
+}
+
+step('operators');
+if (adminKey) {
+  const confirmWith = async (reason, button) => {
+    const d = page.getByRole('dialog');
+    await d.getByLabel('Motivo').fill(reason);
+    await d.getByRole('button', { name: button, exact: true }).click();
+    await d.waitFor({ state: 'detached' });
+  };
+
+  // A code with a bonus, and the beta closed.
+  const code = `E2E-${run.toUpperCase()}`;
+  await page.getByRole('link', { name: 'Convites' }).click();
+  await page.getByRole('button', { name: 'Criar convite' }).click();
+  const d = page.getByRole('dialog');
+  await d.getByLabel('Código (opcional)').fill(code);
+  await d.getByLabel('Para quem').fill('Teste automático');
+  await d.getByLabel('Usos').fill('2');
+  await d.getByLabel('Bónus em créditos').fill('100');
+  await confirmWith('Teste do fluxo de convites', 'Criar convite');
+  await page.getByRole('cell', { name: code }).waitFor();
+  await shot(page, 'admin-invites');
+  await page.getByRole('link', { name: 'Controlo' }).click();
+  await page.getByRole('button', { name: 'Fechar o beta' }).click();
+  await confirmWith('Beta fechado para o teste', 'Fechar');
+  await page.getByText('Fechado', { exact: true }).waitFor();
+
+  // A new owner arrives through the invite link and gets the bonus.
+  const guest = await browser.newContext({ viewport: { width: 1360, height: 860 } });
+  const g = await guest.newPage();
+  watch(g, 'guest');
+  await g.goto(`${BASE}/criar-conta?convite=${code}`);
+  await g.getByText('beta fechado').first().waitFor();
+  if ((await g.getByLabel('Código de convite').inputValue()) !== code) problems.push('invite link did not fill the code');
+  const guestEmail = `convidado+${run}@example.com`;
+  await g.getByLabel('Nome', { exact: true }).fill('Convidado Teste');
+  await g.getByLabel('Email').fill(guestEmail);
+  await g.getByLabel('Palavra-passe').fill('palavra-passe');
+  await shot(g, 'signup-with-invite');
+  await g.getByRole('button', { name: 'Criar conta' }).click();
+  await g.waitForURL('**/novo');
+  const guestBalance = await g.evaluate(async () => {
+    const r = await fetch('/v1/me', { headers: { Authorization: `Bearer ${localStorage.getItem('faz.token')}` } });
+    return (await r.json()).balance;
+  });
+  if (guestBalance !== 119) problems.push(`invite bonus: balance ${guestBalance}, want 119`);
+
+  // Support finds them and gives credits.
+  await page.getByRole('link', { name: 'Utilizadores' }).click();
+  await page.getByLabel('Procurar utilizadores').fill(guestEmail);
+  await page.getByRole('button', { name: 'Procurar' }).click();
+  await page.getByRole('link', { name: 'Convidado Teste' }).click();
+  await page.getByRole('button', { name: 'Dar créditos' }).click();
+  await page.getByRole('dialog').getByLabel('Créditos').fill('50');
+  await confirmWith('Compensação pelo teste', 'Dar 50');
+  await page.getByText('Saldo agora: 169 créditos').waitFor();
+  await shot(page, 'admin-user');
+
+  // Paused models: the owner is told, nothing is charged.
+  await page.getByRole('link', { name: 'Controlo' }).click();
+  await page.getByLabel('Nota interna').fill('Teste de manutenção');
+  await page.getByRole('button', { name: 'Parar agora' }).click();
+  await confirmWith('Testar a pausa', 'Parar');
+  await page.getByText('Os modelos estão parados').waitFor();
+  await shot(page, 'admin-control');
+  expect503 = true;
+  await g.getByLabel('Nome do negócio').fill('Loja do Convidado');
+  await g.getByLabel('O que queres no site').fill('Uma loja de capulanas em Maputo com encomendas pelo WhatsApp.');
+  await g.getByRole('button', { name: 'Construir o meu site' }).click();
+  await g.getByText('em manutenção').waitFor();
+  await shot(g, 'owner-paused');
+  expect503 = false;
+  await page.getByRole('button', { name: 'Retomar' }).click();
+  await confirmWith('Fim do teste da pausa', 'Retomar');
+  await page.getByRole('button', { name: 'Abrir o beta' }).click();
+  await confirmWith('Reabrir depois do teste', 'Abrir');
+  await page.getByText('Aberto', { exact: true }).waitFor();
+  await guest.close();
+
+  // A takedown the owner sees, then restored.
+  await page.getByRole('link', { name: 'Sites' }).click();
+  await page.getByLabel('Procurar sites').fill(business);
+  await page.getByRole('button', { name: 'Procurar' }).click();
+  await page.getByRole('button', { name: 'Retirar do ar' }).click();
+  await confirmWith('Teste de retirada do ar', 'Retirar do ar');
+  await page.getByText('foi retirado do ar').waitFor();
+  await shot(page, 'admin-sites');
+  await page.goto(BASE + editorUrl);
+  await page.getByText('A equipa Faz retirou este site do ar').waitFor();
+  await shot(page, 'owner-taken-down');
+  await page.goto(BASE + '/admin/sites?q=' + encodeURIComponent(business));
+  await page.getByRole('button', { name: 'Repor' }).click();
+  await confirmWith('Fim do teste de retirada', 'Repor');
+  await page.getByText('está de volta').waitFor();
+
+  await page.getByRole('link', { name: 'Registo' }).click();
+  await page.getByText('Retirou o site do ar').first().waitFor();
+  await shot(page, 'admin-audit');
 }
 
 step('pricing and domains');

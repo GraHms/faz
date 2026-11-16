@@ -72,6 +72,8 @@ type Service struct {
 	Pay   payments.Provider
 	Cfg   Config
 	Log   *slog.Logger
+
+	settings settingsCache
 }
 
 // Error is a failure the API shows to the customer.

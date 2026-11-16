@@ -11,6 +11,11 @@ import './styles/base.css';
 import App from './App';
 import { SessionProvider } from './auth/session';
 import { isApiError } from './api';
+import { invite } from './lib/draft';
+
+// An invite link may be the first page loaded: keep its code before any
+// screen reads it.
+invite.capture(window.location.search);
 
 const queryClient = new QueryClient({
   defaultOptions: {

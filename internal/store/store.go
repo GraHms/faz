@@ -129,18 +129,21 @@ func jsonb(v any) ([]byte, error) {
 // ---- users and sessions ----
 
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	Name         string    `json:"name"`
-	PasswordHash string    `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID              string     `json:"id"`
+	Email           string     `json:"email"`
+	Name            string     `json:"name"`
+	PasswordHash    string     `json:"-"`
+	CreatedAt       time.Time  `json:"created_at"`
+	InviteCode      *string    `json:"invite_code,omitempty"`
+	SuspendedAt     *time.Time `json:"suspended_at,omitempty"`
+	SuspendedReason *string    `json:"suspended_reason,omitempty"`
 }
 
-const userCols = `id, email, name, password_hash, created_at`
+const userCols = `id, email, name, password_hash, created_at, invite_code, suspended_at, suspended_reason`
 
 func scanUser(r interface{ Scan(...any) error }) (User, error) {
 	var u User
-	err := r.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.CreatedAt)
+	err := r.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.CreatedAt, &u.InviteCode, &u.SuspendedAt, &u.SuspendedReason)
 	return u, notFound(err)
 }
 
@@ -167,7 +170,8 @@ func (s *Store) CreateSession(ctx context.Context, tokenHash []byte, userID stri
 }
 
 func (s *Store) UserBySession(ctx context.Context, tokenHash []byte) (User, error) {
-	return scanUser(s.DB.QueryRowContext(ctx, `SELECT u.id, u.email, u.name, u.password_hash, u.created_at
+	return scanUser(s.DB.QueryRowContext(ctx, `SELECT u.id, u.email, u.name, u.password_hash, u.created_at,
+		u.invite_code, u.suspended_at, u.suspended_reason
 		FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > now()`, tokenHash))
 }
 
@@ -250,16 +254,19 @@ type Site struct {
 	PublishedAt      *time.Time      `json:"published_at,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
+	// Set when Faz takes the site off the air; publishing is refused until restored.
+	TakenDownAt    *time.Time `json:"taken_down_at,omitempty"`
+	TakedownReason *string    `json:"takedown_reason,omitempty"`
 }
 
 const siteCols = `id, user_id, business_name, business_type, prompt, status, brief, answers, current_version,
-	published_version, subdomain, published_at, created_at, updated_at`
+	published_version, subdomain, published_at, created_at, updated_at, taken_down_at, takedown_reason`
 
 func scanSite(r interface{ Scan(...any) error }) (Site, error) {
 	var s Site
 	var brief, answers []byte
 	err := r.Scan(&s.ID, &s.UserID, &s.BusinessName, &s.BusinessType, &s.Prompt, &s.Status, &brief, &answers,
-		&s.CurrentVersion, &s.PublishedVersion, &s.Subdomain, &s.PublishedAt, &s.CreatedAt, &s.UpdatedAt)
+		&s.CurrentVersion, &s.PublishedVersion, &s.Subdomain, &s.PublishedAt, &s.CreatedAt, &s.UpdatedAt, &s.TakenDownAt, &s.TakedownReason)
 	s.Brief, s.Answers = brief, answers
 	return s, notFound(err)
 }

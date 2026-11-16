@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, isApiError, type Money, type StageTelemetry, type UsageCall, type UsageGroup, type UsageTotals } from '../../api';
-import { Button, Field, Logo, Notice, Pill, Spinner } from '../../components/ui';
+import { Notice, Pill, Spinner } from '../../components/ui';
+import { AdminPage, useAdmin, useRefusal } from './shell';
 import { fmt, since } from '../../lib/format';
 import { siteStatus } from '../../lib/status';
 import { compact, effortLabel, lastDays, modelName, mznExact, operationLabel, percent, seconds, usd } from '../../lib/telemetry';
@@ -10,97 +11,6 @@ import s from './admin.module.css';
 
 // Operator telemetry: tokens, cost per stage and model, and what was charged,
 // per site and per period. Uses the admin key, never an owner's session.
-
-const KEY = 'faz.admin';
-
-function useAdminKey(): [string | null, (k: string | null) => void] {
-  const [key, setKey] = useState<string | null>(() => {
-    try {
-      return sessionStorage.getItem(KEY);
-    } catch {
-      return null;
-    }
-  });
-  const set = (k: string | null) => {
-    try {
-      if (k) sessionStorage.setItem(KEY, k);
-      else sessionStorage.removeItem(KEY);
-    } catch {
-      /* kept in memory for this tab */
-    }
-    setKey(k);
-  };
-  return [key, set];
-}
-
-function Shell({ children, onSignOut }: { children: ReactNode; onSignOut?: () => void }) {
-  return (
-    <div className={s.page}>
-      <header className={s.header}>
-        <div className={s.bar}>
-          <Logo to="/admin" tld={false} />
-          <span className={s.slash} aria-hidden>
-            /
-          </span>
-          <Link to="/admin" className={s.title}>
-            Telemetria
-          </Link>
-          <span className={s.grow} />
-          {onSignOut && (
-            <Button variant="ghost" size="sm" onClick={onSignOut}>
-              Trocar chave
-            </Button>
-          )}
-        </div>
-      </header>
-      <main className={s.main}>{children}</main>
-    </div>
-  );
-}
-
-function Gate({ onKey, error }: { onKey: (k: string) => void; error?: string }) {
-  const [v, setV] = useState('');
-  return (
-    <Shell>
-      <form
-        className={s.gate}
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault();
-          if (v.trim()) onKey(v.trim());
-        }}
-      >
-        <h1 className={s.h1}>Telemetria</h1>
-        <p className="muted">Tokens, custo por etapa e modelo, e créditos cobrados, por site. Só para quem opera a Faz.</p>
-        {error && <Notice>{error}</Notice>}
-        <Field label="Chave de administração" type="password" value={v} onChange={(e) => setV(e.target.value)} hint="A variável FAZ_ADMIN_TOKEN do fazd." autoFocus autoComplete="off" />
-        <Button type="submit" disabled={!v.trim()}>
-          Entrar
-        </Button>
-      </form>
-    </Shell>
-  );
-}
-
-/** Wraps a page that needs the key: asks for it, and asks again when it is refused. */
-function WithKey({ children }: { children: (key: string, signOut: () => void, refused: () => void) => ReactNode }) {
-  const [key, setKey] = useAdminKey();
-  const [error, setError] = useState<string>();
-  if (!key) return <Gate error={error} onKey={(k) => (setError(undefined), setKey(k))} />;
-  const refused = () => {
-    setError('Chave errada. Confirma o FAZ_ADMIN_TOKEN do fazd.');
-    setKey(null);
-  };
-  return <>{children(key, () => setKey(null), refused)}</>;
-}
-
-/** Sends the operator back to the key form when the API refuses the key. */
-function useRefusal(error: unknown, refused: () => void) {
-  const denied = isApiError(error, 'admin_unauthorized');
-  useEffect(() => {
-    if (denied) refused();
-  }, [denied, refused]);
-  return denied;
-}
 
 function Tile({ label, value, note }: { label: string; value: string; note?: ReactNode }) {
   return (
@@ -237,38 +147,24 @@ const periods = [7, 30, 90] as const;
 export function AdminOverview() {
   const [params, setParams] = useSearchParams();
   const days = periods.find((d) => String(d) === params.get('dias')) ?? 30;
-  const range = lastDays(days);
   return (
-    <WithKey>
-      {(key, signOut, refused) => <Overview adminKey={key} signOut={signOut} refused={refused} days={days} range={range} setDays={(d) => setParams({ dias: String(d) })} />}
-    </WithKey>
+    <AdminPage>
+      <Overview days={days} range={lastDays(days)} setDays={(d) => setParams({ dias: String(d) })} />
+    </AdminPage>
   );
 }
 
-function Overview({
-  adminKey,
-  signOut,
-  refused,
-  days,
-  range,
-  setDays,
-}: {
-  adminKey: string;
-  signOut: () => void;
-  refused: () => void;
-  days: number;
-  range: { from: string; to: string };
-  setDays: (d: number) => void;
-}) {
+function Overview({ days, range, setDays }: { days: number; range: { from: string; to: string }; setDays: (d: number) => void }) {
+  const { auth } = useAdmin();
   const q = useQuery({
-    queryKey: ['admin', 'overview', adminKey, range.from, range.to],
-    queryFn: () => api.adminTelemetry(adminKey, range),
+    queryKey: ['admin', 'overview', auth.key, range.from, range.to],
+    queryFn: () => api.adminTelemetry(auth, range),
     retry: false,
   });
-  if (useRefusal(q.error, refused)) return null;
+  if (useRefusal(q.error)) return null;
   const o = q.data;
   return (
-    <Shell onSignOut={signOut}>
+    <>
       <div className={s.head}>
         <div>
           <h1 className={s.h1}>Telemetria</h1>
@@ -355,27 +251,32 @@ function Overview({
           </>
         )
       )}
-    </Shell>
+    </>
   );
 }
 
 export function AdminSite() {
   const { id = '' } = useParams();
-  return <WithKey>{(key, signOut, refused) => <SiteView adminKey={key} signOut={signOut} refused={refused} id={id} />}</WithKey>;
+  return (
+    <AdminPage>
+      <SiteView id={id} />
+    </AdminPage>
+  );
 }
 
-function SiteView({ adminKey, signOut, refused, id }: { adminKey: string; signOut: () => void; refused: () => void; id: string }) {
+function SiteView({ id }: { id: string }) {
+  const { auth } = useAdmin();
   const q = useQuery({
-    queryKey: ['admin', 'site', adminKey, id],
-    queryFn: () => api.adminSiteTelemetry(adminKey, id),
+    queryKey: ['admin', 'site', auth.key, id],
+    queryFn: () => api.adminSiteTelemetry(auth, id),
     retry: false,
   });
-  if (useRefusal(q.error, refused)) return null;
+  if (useRefusal(q.error)) return null;
   const t = q.data;
   return (
-    <Shell onSignOut={signOut}>
+    <>
       <p className={s.crumbs}>
-        <Link to="/admin">Telemetria</Link> / site
+        <Link to="/admin/sites">Sites</Link> / telemetria
       </p>
       {q.isPending ? (
         <div className={s.loading}>
@@ -416,7 +317,7 @@ function SiteView({ adminKey, signOut, refused, id }: { adminKey: string; signOu
           <Footnote />
         </>
       )}
-    </Shell>
+    </>
   );
 }
 

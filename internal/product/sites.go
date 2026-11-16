@@ -109,6 +109,9 @@ func (s *Service) CreateSite(ctx context.Context, u store.User, in NewSite) (*Si
 	case len([]rune(businessType)) > 40:
 		return nil, badRequest("invalid_business_type", "O tipo de negócio é demasiado longo.")
 	}
+	if err := s.modelsOpen(ctx); err != nil {
+		return nil, err
+	}
 	if len(in.Files) > MaxNewSiteFiles {
 		return nil, badRequest("too_many_files", fmt.Sprintf("Envia até %d fotos agora; podes juntar mais depois.", MaxNewSiteFiles))
 	}
@@ -213,6 +216,9 @@ func (s *Service) Answer(ctx context.Context, u store.User, siteID string, answe
 	correction = clean(correction)
 	if len([]rune(correction)) > 1000 {
 		return 0, badRequest("correction_too_long", "Escreve a correcção em até 1000 caracteres.")
+	}
+	if err := s.modelsOpen(ctx); err != nil {
+		return 0, err
 	}
 	var jobID int64
 	err := s.Store.Tx(ctx, func(tx *sql.Tx) error {
@@ -321,6 +327,9 @@ func (s *Service) SendMessage(ctx context.Context, u store.User, siteID, text st
 	}
 	if site.CurrentVersion == 0 || site.Status != "ready" {
 		return nil, conflict("site_busy", "Espera que o site termine a alteração em curso.")
+	}
+	if err := s.modelsOpen(ctx); err != nil {
+		return nil, err
 	}
 	ver, err := s.Store.Version(ctx, site.ID, site.CurrentVersion)
 	if err != nil {
@@ -459,6 +468,20 @@ func (s *Service) Availability(ctx context.Context, name, forSiteID string) (boo
 	case reservedSubdomains[name]:
 		return false, "Este endereço está reservado.", nil
 	}
+	settings, err := s.Settings(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	for _, r := range settings.ReservedNames {
+		if name == r {
+			return false, "Este endereço está reservado.", nil
+		}
+	}
+	for _, w := range settings.BlockedWords {
+		if strings.Contains(name, w) {
+			return false, "Este endereço não é permitido. Escolhe outro.", nil
+		}
+	}
 	owner, err := s.Store.SubdomainOwner(ctx, name)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && owner == forSiteID) {
 		return true, "", nil
@@ -491,6 +514,10 @@ func (s *Service) Publish(ctx context.Context, u store.User, siteID, subdomain s
 		}
 		if site.CurrentVersion == 0 {
 			return conflict("not_built", "O site ainda não foi construído.")
+		}
+		if site.TakenDownAt != nil {
+			return &Error{Status: http.StatusForbidden, Code: "site_taken_down",
+				Message: "Este site foi retirado do ar pela equipa Faz e não pode ser publicado. Fala connosco."}
 		}
 		if site.Subdomain != nil && *site.Subdomain != subdomain {
 			old = *site.Subdomain

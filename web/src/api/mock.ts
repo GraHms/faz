@@ -28,7 +28,19 @@ import type {
 import { parsePhone, subdomainProblem, vatIncluded } from '../lib/format';
 import { renderSamplePage } from './samplePage';
 import { cost, groupByStage, groupCalls, money, plannedCalls, sumTotals } from './mockTelemetry';
-import type { Operation, OverviewSite, SiteTelemetry, TelemetryOverview, UsageCall } from './types';
+import type {
+  AdminAuth,
+  AdminSettings,
+  AdminStatus,
+  AdminUser,
+  AuditEntry,
+  Invite,
+  Operation,
+  OverviewSite,
+  SiteTelemetry,
+  TelemetryOverview,
+  UsageCall,
+} from './types';
 
 const pricing: Pricing = {
   mzn_per_credit: 1,
@@ -71,9 +83,11 @@ interface MockJob extends Job {
   stages: [string, number][];
 }
 
+type MockUser = User & { password: string; suspended_at?: string; suspended_reason?: string };
+
 interface State {
   seq: number;
-  users: (User & { password: string })[];
+  users: MockUser[];
   tokens: Record<string, string>;
   ledger: (LedgerEntry & { user_id: string })[];
   sites: (Site & { user_id: string; questions: Question[]; understood: string; accent: number })[];
@@ -83,12 +97,39 @@ interface State {
   jobs: MockJob[];
   payments: (Payment & { user_id: string; settles_at: number })[];
   usage: (UsageCall & { site_id: string; user_id: string })[];
+  settings: AdminSettings;
+  invites: Invite[];
+  audit: AuditEntry[];
 }
+
+const defaultSettings = (): AdminSettings => ({
+  beta_required: false,
+  builds_paused: false,
+  pause_reason: '',
+  daily_spend_cap_usd: 0,
+  reserved_names: [],
+  blocked_words: [],
+});
 
 const KEY = 'faz.mock.v1';
 
 function empty(): State {
-  return { seq: 1, users: [], tokens: {}, ledger: [], sites: [], messages: [], versions: [], assets: [], jobs: [], payments: [], usage: [] };
+  return {
+    seq: 1,
+    users: [],
+    tokens: {},
+    ledger: [],
+    sites: [],
+    messages: [],
+    versions: [],
+    assets: [],
+    jobs: [],
+    payments: [],
+    usage: [],
+    settings: defaultSettings(),
+    invites: [],
+    audit: [],
+  };
 }
 
 export interface MockOptions {
@@ -142,14 +183,34 @@ export function createMockApi(opts: MockOptions): Api {
     throw new ApiError(status, code, message, details);
   }
 
-  function user(): User & { password: string } {
+  function user(): MockUser {
     const t = opts.getToken();
     const id = t ? s.tokens[t] : undefined;
     const u = id ? s.users.find((x) => x.id === id) : undefined;
     if (!u) fail(401, 'unauthenticated', 'Entra outra vez para continuar.');
+    if (u.suspended_at) fail(401, 'account_suspended', 'A tua conta está suspensa. Fala com a equipa Faz para saber porquê.');
     return u;
   }
-  const publicUser = (u: User): User => ({ id: u.id, email: u.email, name: u.name, created_at: u.created_at });
+  const publicUser = (u: User): User => ({ id: u.id, email: u.email, name: u.name, created_at: u.created_at, invite_code: u.invite_code });
+
+  /** Like Service.modelsOpen: paused by hand, or today's spend reached the cap. */
+  function status(): AdminStatus {
+    const midnight = new Date(now());
+    midnight.setUTCHours(0, 0, 0, 0);
+    const spend = s.usage.filter((c) => Date.parse(c.created_at) >= midnight.getTime()).reduce((n, c) => n + c.cost_usd, 0);
+    const cap = s.settings.daily_spend_cap_usd > 0 && spend >= s.settings.daily_spend_cap_usd;
+    return { ...s.settings, spend_today_usd: Math.round(spend * 1e4) / 1e4, cap_reached: cap, models_open: !s.settings.builds_paused && !cap };
+  }
+  function modelsOpen() {
+    if (!status().models_open) {
+      fail(503, 'builds_paused', 'A Faz está em manutenção por momentos. Tenta outra vez daqui a pouco; não gastaste créditos.');
+    }
+  }
+  function addressProblem(name: string): string | null {
+    if (reserved.has(name) || s.settings.reserved_names.includes(name)) return 'Este endereço está reservado.';
+    if (s.settings.blocked_words.some((w) => name.includes(w))) return 'Este endereço não é permitido. Escolhe outro.';
+    return null;
+  }
   const balance = (userId: string) => s.ledger.filter((l) => l.user_id === userId).reduce((a, l) => a + l.delta, 0);
   const account = (u: User): Account => ({ user: publicUser(u), balance: balance(u.id) });
 
@@ -382,17 +443,31 @@ export function createMockApi(opts: MockOptions): Api {
   return {
     pricing: () => run(() => pricing),
 
-    signup: ({ name, email, password }) =>
+    config: () => run(() => ({ beta_required: s.settings.beta_required })),
+
+    signup: ({ name, email, password, invite_code }) =>
       run(() => {
         name = name.trim();
         email = email.trim().toLowerCase();
+        const code = (invite_code ?? '').replace(/\s/g, '').toUpperCase();
         if (!name) fail(400, 'invalid_name', 'Escreve o teu nome.');
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(400, 'invalid_email', 'Escreve um email válido.');
         if (password.length < 8) fail(400, 'weak_password', 'A palavra-passe precisa de pelo menos 8 caracteres.');
+        if (s.settings.beta_required && !code) {
+          fail(403, 'invite_required', 'A Faz está em beta fechado: precisas de um código de convite para criar conta.');
+        }
         if (s.users.some((u) => u.email === email)) fail(409, 'email_taken', 'Já existe uma conta com este email.');
-        const u = { id: crypto.randomUUID(), email, name, password, created_at: iso() };
+        const inv = code ? s.invites.find((i) => i.code === code) : undefined;
+        if (code && (!inv || inv.disabled_at || inv.uses >= inv.max_uses || (inv.expires_at && Date.parse(inv.expires_at) <= now()))) {
+          fail(403, 'invite_invalid', 'Este código de convite não é válido, expirou ou já foi usado todas as vezes.');
+        }
+        const u: MockUser = { id: crypto.randomUUID(), email, name, password, created_at: iso(), invite_code: inv?.code };
         s.users.push(u);
-        entry(u.id, pricing.signup_gift, 'signup_gift', 'Oferta de boas vindas');
+        entry(u.id, pricing.signup_gift, 'signup_gift', 'Créditos de oferta para o primeiro site');
+        if (inv) {
+          inv.uses++;
+          if (inv.bonus_credits > 0) entry(u.id, inv.bonus_credits, 'adjustment', `Bónus do convite ${inv.code}`);
+        }
         return session(u);
       }),
 
@@ -400,6 +475,7 @@ export function createMockApi(opts: MockOptions): Api {
       run(() => {
         const u = s.users.find((x) => x.email === email.trim().toLowerCase() && x.password === password);
         if (!u) fail(401, 'bad_login', 'Email ou palavra-passe errados.');
+        if (u.suspended_at) fail(403, 'account_suspended', 'A tua conta está suspensa. Fala com a equipa Faz para saber porquê.');
         return session(u);
       }),
 
@@ -424,6 +500,7 @@ export function createMockApi(opts: MockOptions): Api {
     createSite: ({ prompt, business_name, business_type }, files = []) =>
       run(() => {
         const u = user();
+        modelsOpen();
         if (files.length > MAX_NEW_SITE_FILES) fail(400, 'too_many_files', `Envia até ${MAX_NEW_SITE_FILES} fotos agora; podes juntar mais depois.`);
         for (const f of files) {
           if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) fail(400, 'unsupported_image', 'Envia uma imagem JPEG, PNG ou WebP.');
@@ -491,6 +568,7 @@ export function createMockApi(opts: MockOptions): Api {
         const u = user();
         const site = siteOf(siteId, u.id);
         if (site.status !== 'questions') fail(409, 'not_waiting_for_answers', 'Este site já está a ser construído.');
+        modelsOpen();
         // Stored like the backend's labelAnswers: labels for choices, +258 numbers.
         const labeled: Record<string, string> = {};
         if (!skip) {
@@ -540,6 +618,7 @@ export function createMockApi(opts: MockOptions): Api {
         if (site.current_version === 0 || site.status !== 'ready' || busy(site.id)) {
           fail(409, 'site_busy', 'Espera que o site termine a alteração em curso.');
         }
+        modelsOpen();
         spend(site.id, u.id, 'classify');
         const c = classify(text);
         if (c.kind !== 'edit' && c.kind !== 'structural') {
@@ -581,7 +660,8 @@ export function createMockApi(opts: MockOptions): Api {
         name = name.toLowerCase();
         const problem = subdomainProblem(name);
         if (problem) return { name, available: false, reason: problem };
-        if (reserved.has(name)) return { name, available: false, reason: 'Este endereço está reservado.' };
+        const rule = addressProblem(name);
+        if (rule) return { name, available: false, reason: rule };
         const owner = s.sites.find((x) => x.subdomain === name);
         if (owner && owner.id !== siteId) return { name, available: false, reason: 'Este endereço já tem dono.' };
         return { name, available: true, reason: '' };
@@ -591,8 +671,11 @@ export function createMockApi(opts: MockOptions): Api {
       run(() => {
         const site = siteOf(siteId, user().id);
         subdomain = subdomain.toLowerCase();
-        const problem = subdomainProblem(subdomain) ?? (reserved.has(subdomain) ? 'Este endereço está reservado.' : null);
+        const problem = subdomainProblem(subdomain) ?? addressProblem(subdomain);
         if (problem) fail(409, 'subdomain_unavailable', problem);
+        if (site.taken_down_at) {
+          fail(403, 'site_taken_down', 'Este site foi retirado do ar pela equipa Faz e não pode ser publicado. Fala connosco.');
+        }
         if (s.sites.some((x) => x.subdomain === subdomain && x.id !== site.id)) fail(409, 'subdomain_unavailable', 'Este endereço já tem dono.');
         if (!site.current_version) fail(409, 'not_built', 'O site ainda não foi construído.');
         site.subdomain = subdomain;
@@ -655,9 +738,9 @@ export function createMockApi(opts: MockOptions): Api {
       }),
 
     // Any non-empty key opens the admin pages in the mock.
-    adminTelemetry: (key, period = {}) =>
+    adminTelemetry: (auth, period = {}) =>
       run((): TelemetryOverview => {
-        adminKey(key);
+        adminKey(auth);
         const to = period.to ? Date.parse(period.to + 'T00:00:00Z') + 86400_000 : now() + 1;
         const from = period.from ? Date.parse(period.from + 'T00:00:00Z') : to - 30 * 86400_000;
         const inRange = (t: string) => Date.parse(t) >= from && Date.parse(t) < to;
@@ -696,9 +779,9 @@ export function createMockApi(opts: MockOptions): Api {
         };
       }),
 
-    adminSiteTelemetry: (key, siteId) =>
+    adminSiteTelemetry: (auth, siteId) =>
       run((): SiteTelemetry => {
-        adminKey(key);
+        adminKey(auth);
         const site = s.sites.find((x) => x.id === siteId);
         if (!site) fail(404, 'not_found', 'Não encontrado.');
         const calls = s.usage.filter((c) => c.site_id === site.id).map(publicCall);
@@ -723,10 +806,207 @@ export function createMockApi(opts: MockOptions): Api {
           calls,
         };
       }),
+
+    adminStatus: (auth) =>
+      run(() => {
+        adminKey(auth);
+        return status();
+      }),
+
+    adminUpdateSettings: (auth, patch, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        const words = (v: string[] | undefined) =>
+          v === undefined ? undefined : [...new Set(v.map((w) => w.trim().toLowerCase()).filter(Boolean))].sort();
+        const changes: Partial<AdminSettings> = { ...patch };
+        if (patch.reserved_names) changes.reserved_names = words(patch.reserved_names);
+        if (patch.blocked_words) changes.blocked_words = words(patch.blocked_words);
+        if (Object.keys(changes).length === 0) fail(400, 'nothing_to_change', 'Nada para mudar.');
+        s.settings = { ...s.settings, ...changes };
+        audit(op, 'settings.update', 'settings', 'global', reason, { changes });
+        return status();
+      }),
+
+    adminInvites: (auth) =>
+      run(() => {
+        adminKey(auth);
+        return s.invites;
+      }),
+
+    adminCreateInvite: (auth, inv, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const pick = () => alphabet[Math.floor(Math.random() * alphabet.length)];
+        const code = (inv.code ?? '').replace(/\s/g, '').toUpperCase() || `FAZ-${Array.from({ length: 4 }, pick).join('')}-${Array.from({ length: 4 }, pick).join('')}`;
+        if (!/^[A-Z0-9][A-Z0-9-]{2,39}$/.test(code)) fail(400, 'invalid_code', 'O código leva 3 a 40 letras maiúsculas, números e hífens.');
+        if (inv.max_uses < 1 || inv.max_uses > 10000) fail(400, 'invalid_max_uses', 'Usos: de 1 a 10 000.');
+        if (inv.bonus_credits < 0 || inv.bonus_credits > 5000) fail(400, 'invalid_bonus', 'Bónus: de 0 a 5 000 créditos.');
+        if (s.invites.some((i) => i.code === code)) fail(409, 'code_taken', 'Esse código já existe.');
+        const out: Invite = { code, note: inv.note ?? '', max_uses: inv.max_uses, uses: 0, bonus_credits: inv.bonus_credits, expires_at: inv.expires_at, created_by: op, created_at: iso() };
+        s.invites.unshift(out);
+        audit(op, 'invite.create', 'invite', code, reason, { ...inv });
+        return out;
+      }),
+
+    adminDisableInvite: (auth, code, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        const inv = s.invites.find((i) => i.code === code);
+        if (!inv) fail(404, 'not_found', 'Não encontrado.');
+        inv.disabled_at ??= iso();
+        audit(op, 'invite.disable', 'invite', code, reason);
+        return inv;
+      }),
+
+    adminUsers: (auth, query) =>
+      run(() => {
+        adminKey(auth);
+        const q = query.trim().toLowerCase();
+        let digits = q.replace(/\D/g, '');
+        if (digits.length > 9 && digits.startsWith('258')) digits = digits.slice(3);
+        return s.users
+          .filter((u) => {
+            if (!q) return true;
+            if (u.email.includes(q) || u.name.toLowerCase().includes(q) || u.id === q) return true;
+            return digits.length >= 6 && s.payments.some((p) => p.user_id === u.id && p.msisdn.includes(digits));
+          })
+          .slice()
+          .reverse()
+          .map((u) => ({
+            ...adminUser(u),
+            balance: balance(u.id),
+            sites: s.sites.filter((x) => x.user_id === u.id).length,
+            last_msisdn: [...s.payments].reverse().find((p) => p.user_id === u.id)?.msisdn,
+          }));
+      }),
+
+    adminUser: (auth, userId) =>
+      run(() => {
+        adminKey(auth);
+        const u = s.users.find((x) => x.id === userId);
+        if (!u) fail(404, 'not_found', 'Não encontrado.');
+        return {
+          user: adminUser(u),
+          balance: balance(u.id),
+          sessions: Object.values(s.tokens).filter((id) => id === u.id).length,
+          sites: s.sites.filter((x) => x.user_id === u.id).map(stripSite),
+          ledger: s.ledger.filter((l) => l.user_id === u.id).reverse().map((l) => strip(l, 'user_id') as LedgerEntry),
+          payments: s.payments.filter((p) => p.user_id === u.id).reverse().map((p) => strip(p, 'user_id', 'settles_at') as Payment),
+          audit: s.audit.filter((a) => a.target_type === 'user' && a.target_id === u.id),
+        };
+      }),
+
+    adminAdjustCredits: (auth, userId, adj, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        const u = s.users.find((x) => x.id === userId);
+        if (!u) fail(404, 'not_found', 'Não encontrado.');
+        if (!adj.delta || Math.abs(adj.delta) > 100000) fail(400, 'invalid_delta', 'Escolhe um valor entre −100 000 e 100 000 créditos, sem ser 0.');
+        if (s.audit.some((a) => a.details.request_id === adj.request_id)) return { balance: balance(u.id) };
+        const bal = balance(u.id);
+        if (bal + adj.delta < 0) fail(400, 'would_go_negative', `O saldo é ${bal} créditos; não dá para tirar ${-adj.delta}.`);
+        const note = adj.public_note?.trim() || (adj.delta > 0 ? 'Créditos oferecidos pela equipa Faz' : 'Acerto feito pela equipa Faz');
+        entry(u.id, adj.delta, 'adjustment', note);
+        audit(op, 'credits.adjust', 'user', u.id, reason, { delta: adj.delta, public_note: note, request_id: adj.request_id, balance_after: bal + adj.delta });
+        return { balance: bal + adj.delta };
+      }),
+
+    adminSuspend: (auth, userId, suspended, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        const u = s.users.find((x) => x.id === userId);
+        if (!u) fail(404, 'not_found', 'Não encontrado.');
+        u.suspended_at = suspended ? iso() : undefined;
+        u.suspended_reason = suspended ? reason.trim() : undefined;
+        let ended = 0;
+        if (suspended) {
+          for (const [t, id] of Object.entries(s.tokens)) if (id === u.id) (delete s.tokens[t], ended++);
+        }
+        audit(op, suspended ? 'user.suspend' : 'user.unsuspend', 'user', u.id, reason, { sessions_ended: ended });
+        return adminUser(u);
+      }),
+
+    adminSignOut: (auth, userId, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        let ended = 0;
+        for (const [t, id] of Object.entries(s.tokens)) if (id === userId) (delete s.tokens[t], ended++);
+        audit(op, 'user.sign_out', 'user', userId, reason, { sessions_ended: ended });
+        return { sessions_ended: ended };
+      }),
+
+    adminRefundJob: (auth, jobId, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        const charged = s.ledger.find((l) => l.job_id === jobId && l.kind === 'charge');
+        if (!charged) fail(404, 'not_found', 'Não encontrado.');
+        if (s.ledger.some((l) => l.job_id === jobId && l.kind === 'refund')) fail(409, 'already_refunded', 'Este trabalho já foi devolvido.');
+        entry(charged.user_id, -charged.delta, 'refund', 'Devolução feita pela equipa Faz', { job_id: jobId });
+        audit(op, 'credits.refund_job', 'user', charged.user_id, reason, { job_id: jobId, credits: -charged.delta });
+        return { credits: -charged.delta };
+      }),
+
+    adminSites: (auth, query) =>
+      run(() => {
+        adminKey(auth);
+        const q = query.trim().toLowerCase();
+        return s.sites
+          .filter((x) => !q || x.business_name.toLowerCase().includes(q) || x.subdomain?.includes(q) || x.id === q)
+          .slice()
+          .reverse()
+          .map((x) => ({ ...stripSite(x), owner_email: s.users.find((u) => u.id === x.user_id)?.email ?? '' }));
+      }),
+
+    adminTakeDown: (auth, siteId, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        const site = s.sites.find((x) => x.id === siteId);
+        if (!site) fail(404, 'not_found', 'Não encontrado.');
+        site.taken_down_at = iso();
+        site.takedown_reason = reason.trim();
+        audit(op, 'site.takedown', 'site', site.id, reason, { subdomain: site.subdomain });
+        return stripSite(site);
+      }),
+
+    adminRestore: (auth, siteId, reason) =>
+      run(() => {
+        const op = operator(auth, reason);
+        const site = s.sites.find((x) => x.id === siteId);
+        if (!site) fail(404, 'not_found', 'Não encontrado.');
+        if (!site.taken_down_at) fail(409, 'not_taken_down', 'Este site não está retirado do ar.');
+        site.taken_down_at = undefined;
+        site.takedown_reason = undefined;
+        audit(op, 'site.restore', 'site', site.id, reason, { subdomain: site.subdomain });
+        return stripSite(site);
+      }),
+
+    adminAudit: (auth, target) =>
+      run(() => {
+        adminKey(auth);
+        return s.audit.filter((a) => !target || (a.target_type === target.type && a.target_id === target.id));
+      }),
   };
 
-  function adminKey(key: string) {
-    if (!key.trim()) fail(401, 'admin_unauthorized', 'Chave de administração errada.');
+  function adminKey(auth: AdminAuth) {
+    if (!auth.key.trim()) fail(401, 'admin_unauthorized', 'Chave de administração errada.');
+  }
+
+  /** Like Operator.check: every write names who acted and why. */
+  function operator(auth: AdminAuth, reason: string): string {
+    adminKey(auth);
+    const name = (auth.operator ?? '').trim();
+    if (name.length < 2 || name.length > 60) fail(400, 'operator_required', 'Diz quem és: o nome do operador vai para o registo.');
+    if (reason.trim().length < 5) fail(400, 'reason_required', 'Escreve o motivo (pelo menos 5 caracteres); fica no registo.');
+    return name;
+  }
+
+  function audit(op: string, action: string, targetType: string, targetId: string, reason: string, details: Record<string, unknown> = {}) {
+    s.audit.unshift({ id: nextId(), operator: op, action, target_type: targetType, target_id: targetId, reason: reason.trim(), details, created_at: iso() });
+  }
+
+  function adminUser(u: MockUser): AdminUser {
+    return { ...publicUser(u), suspended_at: u.suspended_at, suspended_reason: u.suspended_reason };
   }
 
   function publicCall(c: State['usage'][number]): UsageCall {

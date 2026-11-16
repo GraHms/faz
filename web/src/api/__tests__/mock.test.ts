@@ -62,15 +62,15 @@ describe('mock API', () => {
     expect(after.site.status).toBe('ready');
     expect(after.messages.at(-1)?.text).toMatch(/créditos foram devolvidos/);
     // Telemetry sees every model call, grouped, with credits beside it.
-    await expect(api.adminSiteTelemetry('', v.site.id)).rejects.toMatchObject({ code: 'admin_unauthorized' });
-    const t = await api.adminSiteTelemetry('chave', v.site.id);
+    await expect(api.adminSiteTelemetry({ key: '' }, v.site.id)).rejects.toMatchObject({ code: 'admin_unauthorized' });
+    const t = await api.adminSiteTelemetry({ key: 'chave' }, v.site.id);
     expect(t.by_operation.map((o) => o.operation)).toEqual(['questions', 'build', 'classify', 'edit']);
     expect(t.by_stage.filter((x) => x.operation === 'build').map((x) => x.stage)).toEqual(['intake', 'content', 'plan', 'critique', 'build', 'review']);
     expect(t.totals.calls).toBe(t.calls.length);
     expect(t.by_stage.reduce((n, x) => n + x.cost_usd, 0)).toBeCloseTo(t.totals.cost_usd, 6);
     expect(t.money).toMatchObject({ credits_charged: 24, credits_refunded: 5, credits_net: 19 });
     expect(t.jobs).toMatchObject({ builds: 1, edits: 1, failed: 1 });
-    const o = await api.adminTelemetry('chave');
+    const o = await api.adminTelemetry({ key: 'chave' });
     expect(o.sites.map((x) => x.site_id)).toEqual([v.site.id]);
     expect(o.totals.cost_usd).toBeCloseTo(t.totals.cost_usd, 6);
   });
@@ -91,6 +91,57 @@ describe('mock API', () => {
     expect(after.site.answers).toEqual({ sentir: 'Vivo e cheio de cor', _correction: 'Isto estraga tudo' });
     expect(after.understood).toBeTruthy();
     expect((await api.me()).balance).toBe(19);
+  });
+
+  it('runs the operator controls like fazd', async () => {
+    const { api, signIn } = setup();
+    const ops = { key: 'chave', operator: 'Ismael' };
+    await expect(api.adminUpdateSettings({ key: 'chave' }, { beta_required: true }, 'Beta fechado')).rejects.toMatchObject({ code: 'operator_required' });
+    await expect(api.adminUpdateSettings(ops, { beta_required: true }, 'curto')).resolves.toMatchObject({ beta_required: true });
+    expect(await api.config()).toEqual({ beta_required: true });
+    await expect(api.signup({ name: 'Sem', email: 'sem@example.com', password: 'segredo123' })).rejects.toMatchObject({ code: 'invite_required' });
+    const inv = await api.adminCreateInvite(ops, { code: 'maputo-beta', max_uses: 1, bonus_credits: 100 }, 'Primeiros testes');
+    expect(inv.code).toBe('MAPUTO-BETA');
+    const s1 = await api.signup({ name: 'Rita', email: 'rita@example.com', password: 'segredo123', invite_code: 'maputo-beta' });
+    expect(s1.account.balance).toBe(119);
+    await expect(api.signup({ name: 'Outra', email: 'o@example.com', password: 'segredo123', invite_code: 'MAPUTO-BETA' })).rejects.toMatchObject({
+      code: 'invite_invalid',
+    });
+
+    const uid = s1.account.user.id;
+    const grant = { delta: 50, request_id: 'req-1' };
+    expect(await api.adminAdjustCredits(ops, uid, grant, 'Compensação')).toEqual({ balance: 169 });
+    expect(await api.adminAdjustCredits(ops, uid, grant, 'Compensação')).toEqual({ balance: 169 });
+    await expect(api.adminAdjustCredits(ops, uid, { delta: -500, request_id: 'req-2' }, 'Erro de teste')).rejects.toMatchObject({ code: 'would_go_negative' });
+
+    signIn(s1.token);
+    await api.adminUpdateSettings(ops, { builds_paused: true }, 'Incidente no fornecedor');
+    await expect(api.createSite({ prompt: 'Site para o meu salão na Matola', business_name: 'Nyeleti', business_type: 'Salão' })).rejects.toMatchObject({
+      code: 'builds_paused',
+    });
+    await api.adminUpdateSettings(ops, { builds_paused: false, blocked_words: ['Golpe'] }, 'Fornecedor recuperado');
+    expect(await api.availability('golpe-mpesa')).toMatchObject({ available: false });
+
+    const site = await api.createSite({ prompt: 'Site para o meu salão na Matola', business_name: 'Nyeleti', business_type: 'Salão' });
+    await api.adminTakeDown(ops, site.site.id, 'Denúncia de burla');
+    expect((await api.site(site.site.id)).site.taken_down_at).toBeTruthy();
+    expect((await api.adminSites(ops, 'nyel'))[0]?.owner_email).toBe('rita@example.com');
+
+    await api.adminSuspend(ops, uid, true, 'Burla confirmada');
+    // Suspension ends every session, as in fazd.
+    await expect(api.me()).rejects.toMatchObject({ status: 401 });
+
+    const log = await api.adminAudit(ops);
+    expect(log.map((e) => e.action)).toEqual([
+      'user.suspend',
+      'site.takedown',
+      'settings.update',
+      'settings.update',
+      'credits.adjust',
+      'invite.create',
+      'settings.update',
+    ]);
+    expect(log.every((e) => e.operator === 'Ismael')).toBe(true);
   });
 
   it('checks subdomains like the backend', async () => {

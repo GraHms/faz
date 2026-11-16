@@ -1,4 +1,16 @@
 import type {
+  AdminAuth,
+  AdminSiteRow,
+  AdminStatus,
+  AdminUser,
+  AdminUserDetail,
+  AdminUserRow,
+  AuditEntry,
+  CreditAdjustment,
+  Invite,
+  NewInvite,
+  PublicConfig,
+  SettingsPatch,
   Account,
   ApiErrorBody,
   Asset,
@@ -20,8 +32,10 @@ import type {
 /** Everything the app asks of fazd. The HTTP client and the mock both implement it. */
 export interface Api {
   pricing(): Promise<Pricing>;
+  /** Whether sign up needs an invite code right now. */
+  config(): Promise<PublicConfig>;
 
-  signup(input: { name: string; email: string; password: string }): Promise<Session>;
+  signup(input: { name: string; email: string; password: string; invite_code?: string }): Promise<Session>;
   login(input: { email: string; password: string }): Promise<Session>;
   logout(): Promise<void>;
   me(): Promise<Account>;
@@ -44,10 +58,29 @@ export interface Api {
   payments(): Promise<Payment[]>;
   payment(id: string): Promise<Payment>;
 
-  /** Operators only: needs the admin key (FAZ_ADMIN_TOKEN), not a session. Days are inclusive, UTC. */
-  adminTelemetry(key: string, period?: { from?: string; to?: string }): Promise<TelemetryOverview>;
-  adminSiteTelemetry(key: string, siteId: string): Promise<SiteTelemetry>;
+  // Operators only: the admin key (FAZ_ADMIN_TOKEN), never a session. Writes
+  // carry the operator's name and a reason, both kept in the audit log.
+  /** Days are inclusive, UTC. */
+  adminTelemetry(auth: AdminAuth, period?: { from?: string; to?: string }): Promise<TelemetryOverview>;
+  adminSiteTelemetry(auth: AdminAuth, siteId: string): Promise<SiteTelemetry>;
+  adminStatus(auth: AdminAuth): Promise<AdminStatus>;
+  adminUpdateSettings(auth: AdminAuth, patch: SettingsPatch, reason: string): Promise<AdminStatus>;
+  adminInvites(auth: AdminAuth): Promise<Invite[]>;
+  adminCreateInvite(auth: AdminAuth, invite: NewInvite, reason: string): Promise<Invite>;
+  adminDisableInvite(auth: AdminAuth, code: string, reason: string): Promise<Invite>;
+  adminUsers(auth: AdminAuth, query: string): Promise<AdminUserRow[]>;
+  adminUser(auth: AdminAuth, userId: string): Promise<AdminUserDetail>;
+  adminAdjustCredits(auth: AdminAuth, userId: string, adjustment: CreditAdjustment, reason: string): Promise<{ balance: number }>;
+  adminSuspend(auth: AdminAuth, userId: string, suspended: boolean, reason: string): Promise<AdminUser>;
+  adminSignOut(auth: AdminAuth, userId: string, reason: string): Promise<{ sessions_ended: number }>;
+  adminRefundJob(auth: AdminAuth, jobId: number, reason: string): Promise<{ credits: number }>;
+  adminSites(auth: AdminAuth, query: string): Promise<AdminSiteRow[]>;
+  adminTakeDown(auth: AdminAuth, siteId: string, reason: string): Promise<Site>;
+  adminRestore(auth: AdminAuth, siteId: string, reason: string): Promise<Site>;
+  adminAudit(auth: AdminAuth, target?: { type: string; id: string }): Promise<AuditEntry[]>;
 }
+
+
 
 /** An error the API returned, with its machine readable code. */
 export class ApiError extends Error {
@@ -86,12 +119,15 @@ export function createHttpApi(opts: HttpOptions): Api {
   const doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis);
   const base = opts.baseUrl.replace(/\/+$/, '');
 
-  async function request<T>(method: string, path: string, body?: unknown, adminKey?: string): Promise<T> {
+  async function request<T>(method: string, path: string, body?: unknown, admin?: AdminAuth): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     // The admin key never travels with a user session, and vice versa.
-    const token = adminKey ? null : opts.getToken();
+    const token = admin ? null : opts.getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
-    if (adminKey) headers['X-Faz-Admin'] = adminKey;
+    if (admin) {
+      headers['X-Faz-Admin'] = admin.key;
+      if (admin.operator) headers['X-Faz-Operator'] = admin.operator;
+    }
     let payload: BodyInit | undefined;
     if (body instanceof FormData) {
       payload = body;
@@ -133,6 +169,7 @@ export function createHttpApi(opts: HttpOptions): Api {
 
   return {
     pricing: () => request('GET', '/v1/pricing'),
+    config: () => request('GET', '/v1/config'),
 
     signup: (input) => request('POST', '/v1/auth/signup', input),
     login: (input) => request('POST', '/v1/auth/login', input),
@@ -171,13 +208,36 @@ export function createHttpApi(opts: HttpOptions): Api {
     payments: () => request<{ payments: Payment[] }>('GET', '/v1/payments').then((r) => r.payments),
     payment: (paymentId) => request('GET', `/v1/payments/${id(paymentId)}`),
 
-    adminTelemetry: (key, period = {}) => {
+    adminTelemetry: (auth, period = {}) => {
       const q = new URLSearchParams();
       if (period.from) q.set('from', period.from);
       if (period.to) q.set('to', period.to);
       const qs = q.toString();
-      return request('GET', `/v1/admin/telemetry${qs ? `?${qs}` : ''}`, undefined, key);
+      return request('GET', `/v1/admin/telemetry${qs ? `?${qs}` : ''}`, undefined, auth);
     },
-    adminSiteTelemetry: (key, siteId) => request('GET', `/v1/admin/sites/${id(siteId)}/telemetry`, undefined, key),
+    adminSiteTelemetry: (auth, siteId) => request('GET', `/v1/admin/sites/${id(siteId)}/telemetry`, undefined, auth),
+    adminStatus: (auth) => request('GET', '/v1/admin/status', undefined, auth),
+    adminUpdateSettings: (auth, patch, reason) => request('POST', '/v1/admin/settings', { ...patch, reason }, auth),
+    adminInvites: (auth) => request<{ invites: Invite[] }>('GET', '/v1/admin/invites', undefined, auth).then((r) => r.invites),
+    adminCreateInvite: (auth, invite, reason) => request('POST', '/v1/admin/invites', { ...invite, reason }, auth),
+    adminDisableInvite: (auth, code, reason) => request('POST', `/v1/admin/invites/${id(code)}/disable`, { reason }, auth),
+    adminUsers: (auth, query) =>
+      request<{ users: AdminUserRow[] }>('GET', `/v1/admin/users?q=${id(query)}`, undefined, auth).then((r) => r.users),
+    adminUser: (auth, userId) => request('GET', `/v1/admin/users/${id(userId)}`, undefined, auth),
+    adminAdjustCredits: (auth, userId, adj, reason) => request('POST', `/v1/admin/users/${id(userId)}/credits`, { ...adj, reason }, auth),
+    adminSuspend: (auth, userId, suspended, reason) => request('POST', `/v1/admin/users/${id(userId)}/suspend`, { suspended, reason }, auth),
+    adminSignOut: (auth, userId, reason) => request('POST', `/v1/admin/users/${id(userId)}/sign-out`, { reason }, auth),
+    adminRefundJob: (auth, jobId, reason) => request('POST', `/v1/admin/jobs/${jobId}/refund`, { reason }, auth),
+    adminSites: (auth, query) =>
+      request<{ sites: AdminSiteRow[] }>('GET', `/v1/admin/sites?q=${id(query)}`, undefined, auth).then((r) => r.sites),
+    adminTakeDown: (auth, siteId, reason) => request('POST', `/v1/admin/sites/${id(siteId)}/takedown`, { reason }, auth),
+    adminRestore: (auth, siteId, reason) => request('POST', `/v1/admin/sites/${id(siteId)}/restore`, { reason }, auth),
+    adminAudit: (auth, target) =>
+      request<{ entries: AuditEntry[] }>(
+        'GET',
+        `/v1/admin/audit${target ? `?target_type=${id(target.type)}&target_id=${id(target.id)}` : ''}`,
+        undefined,
+        auth,
+      ).then((r) => r.entries),
   };
 }
