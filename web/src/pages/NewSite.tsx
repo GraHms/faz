@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, isApiError, sitesDomain } from '../api';
+import { MAX_NEW_SITE_FILES } from '../api/types';
 import { AuthShell, ReadyPanel } from '../components/AuthShell';
 import { Button, Field, Notice, Spinner, TextArea } from '../components/ui';
 import { draft, imageAccept, pickImages } from '../lib/draft';
@@ -34,18 +35,16 @@ export default function NewSite() {
     setError(null);
     if (Object.keys(next).length) return;
 
-    setStage('A ler o teu pedido…');
+    const total = files.reduce((n, f) => n + f.size, 0);
+    if (total > 60 * 1024 * 1024) {
+      setError('As fotos juntas passam de 60 MB. Envia menos agora e junta as outras depois, no chat.');
+      return;
+    }
+    // The photos go with the request, so the questions take them into account.
+    setStage(files.length ? `A enviar o pedido e ${files.length === 1 ? 'a foto' : `${files.length} fotos`}…` : 'A ler o teu pedido…');
     try {
-      const v = await api.createSite({ prompt: prompt.trim(), business_name: name.trim(), business_type: type });
-      let failed = 0;
-      for (const [i, f] of files.entries()) {
-        setStage(`A enviar fotos, ${i + 1} de ${files.length}…`);
-        try {
-          await api.uploadAsset(v.site.id, f);
-        } catch {
-          failed++;
-        }
-      }
+      const v = await api.createSite({ prompt: prompt.trim(), business_name: name.trim(), business_type: type }, files);
+      const failed = Math.max(0, files.length - v.assets.length);
       draft.clear();
       qc.setQueryData(keys.site(v.site.id), v);
       qc.invalidateQueries({ queryKey: keys.sites });
@@ -53,6 +52,7 @@ export default function NewSite() {
     } catch (err) {
       setStage(null);
       if (isApiError(err, 'invalid_prompt')) setErrors({ prompt: err.message });
+      else if (isApiError(err) && ['unsupported_image', 'file_too_large', 'too_many_files', 'request_too_large'].includes(err.code)) setError(err.message);
       else if (isApiError(err, 'invalid_business_name')) setErrors({ name: err.message });
       else setError(isApiError(err) ? err.message : 'Não foi possível começar o site. Tenta outra vez.');
     }
@@ -102,7 +102,11 @@ export default function NewSite() {
           <Button variant="secondary" size="sm" onClick={() => fileInput.current?.click()}>
             Adicionar fotos
           </Button>
-          <span>{files.length ? `${files.length} ${files.length === 1 ? 'foto' : 'fotos'}` : 'Opcional: logótipo, espaço, produtos.'}</span>
+          <span>
+            {files.length
+              ? `${files.length} ${files.length === 1 ? 'foto' : 'fotos'}${files.length >= MAX_NEW_SITE_FILES ? ` (máximo ${MAX_NEW_SITE_FILES} agora)` : ''}`
+              : 'Opcional: logótipo, espaço, produtos.'}
+          </span>
           {files.length > 0 && (
             <Button variant="ghost" size="sm" onClick={() => setFiles([])}>
               Tirar
@@ -118,7 +122,7 @@ export default function NewSite() {
               if (!e.target.files) return;
               const { ok, rejected } = pickImages(e.target.files);
               setError(rejected);
-              setFiles((f) => [...f, ...ok].slice(0, 12));
+              setFiles((f) => [...f, ...ok].slice(0, MAX_NEW_SITE_FILES));
               e.target.value = '';
             }}
           />

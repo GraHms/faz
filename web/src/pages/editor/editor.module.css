@@ -430,6 +430,42 @@
   opacity: 0.35;
 }
 
+/* What the intake understood, for the owner to confirm or correct */
+.understood {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.understoodHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.understoodHead .linkBtn {
+  font-size: var(--text-sm);
+}
+.understoodText {
+  font-size: var(--text-base);
+  line-height: 1.55;
+}
+.correction {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+}
+.correction .linkBtn {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
 /* Questions */
 .qCard {
   border: 1px solid var(--line-2);

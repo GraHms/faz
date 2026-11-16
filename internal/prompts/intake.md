@@ -22,6 +22,8 @@ The user message contains the client's request as they wrote it, followed by a l
     - Ask at most one question about how the site should feel. Its options describe moods drawn from the subject's own world (for a fish restaurant: "Cais de pescadores", "Mesa de família"), never color names or generic labels like "moderno" or "elegante". Always add a last option that lets you decide.
     - `kind` is `choice` (pick one), `multi` (pick several), `phone` or `text`. Choice questions have two to four options, each a short label.
     - If the request already has everything a good page needs, return an empty list.
+    - If photos are attached, never ask whether the client has photos. Ask about them only if what they show is unclear and it matters.
+11. `understood` is what you understood, said back to the client so they can correct it before anything is built. Write it in `language`, addressed to them, in at most two short sentences: what the business is, who the page is for, and the one thing it must get visitors to do. Use their own words where you can, and state your main assumption plainly instead of hedging, because a wrong guess they can see is cheaper than one they discover on the finished page. No design vocabulary.
 
 # Output
 
@@ -34,6 +36,7 @@ Return one JSON object inside a single ```json fenced block and nothing else. Us
   "subject": "what the business, product, event or person is, in one sentence",
   "audience": "who the page is for, in one sentence",
   "page_job": "the single thing the page must achieve",
+  "understood": "Percebi que é um site para ... , pensado para ... . O principal é levar quem visita a ... .",
   "primary_action": {"label": "action in the client's words, or null", "target": "URL, tel:, mailto:, wa.me link, or null"},
   "provided_facts": [{"key": "phone", "value": "+258 84 000 0000"}],
   "brand": {

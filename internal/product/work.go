@@ -95,7 +95,7 @@ func (s *Service) handleBuild(ctx context.Context, j jobs.Job) (any, error) {
 		return nil, err
 	}
 	out := filepath.Join(dir, "out")
-	p := s.pipe(out, composeBrief(site, brief.Questions, answers))
+	p := s.pipe(out, composeBrief(site, brief, answers))
 	p.Opt.Assets = files
 	p.Opt.OnStage = s.progress(ctx, j.ID)
 	rep, err := p.Run(ctx)
@@ -259,7 +259,7 @@ func (s *Service) OnJobFailed(ctx context.Context, j jobs.Job, cause error) erro
 		}
 		status, text := "ready", "Não consegui fazer esta alteração por um erro nosso. Os créditos foram devolvidos; tenta outra vez."
 		if j.Kind == JobBuild && site.CurrentVersion == 0 {
-			status, text = "questions", "Não consegui construir o site por um erro nosso. Os créditos foram devolvidos; carrega em Construir para tentar outra vez."
+			status, text = "questions", "Não consegui construir o site por um erro nosso. Os créditos foram devolvidos e as tuas respostas ficaram guardadas; carrega em Construir para tentar outra vez."
 		}
 		if err := s.Store.SetSiteStatus(ctx, tx, site.ID, status); err != nil {
 			return err

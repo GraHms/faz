@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, isApiError, type Job, type Message, type SiteView } from '../../api';
+import { CORRECTION_KEY } from '../../api/types';
+import { answerSummary, storedToValues } from '../../lib/answers';
 import { useSession } from '../../auth/session';
 import { TopUpModal, type TopUpReason } from '../../components/TopUpModal';
 import { Button, Notice, Pill, Spinner } from '../../components/ui';
@@ -79,11 +81,11 @@ function Workspace({ view }: { view: SiteView }) {
     void qc.invalidateQueries({ queryKey: keys.me });
   };
 
-  async function answer(answers: Record<string, string>, skip = false) {
+  async function answer(answers: Record<string, string>, skip: boolean, correction: string) {
     setAnswering(true);
     setNotice(null);
     try {
-      await api.answer(site.id, answers, skip);
+      await api.answer(site.id, answers, skip, correction);
       refresh();
     } catch (e) {
       if (isApiError(e, 'insufficient_credits')) setTopUp({ reason: 'page', cost: Number(e.details.needed) || undefined });
@@ -211,7 +213,7 @@ function Chat({
   job: Job | undefined;
   jobKind: 'build' | 'edit';
   answering: boolean;
-  onAnswer: (a: Record<string, string>, skip?: boolean) => void;
+  onAnswer: (a: Record<string, string>, skip: boolean, correction: string) => void;
   notice: string | null;
   setNotice: (v: string | null) => void;
   onNeedCredits: (cost?: number) => void;
@@ -294,7 +296,8 @@ function Chat({
   // Quick replies the assistant offered render under its message; these are
   // the defaults when it offered none.
   const chips = ready && !lastAssistant?.options?.length ? ['Muda a cor principal', 'Acrescenta o horário', 'Adiciona uma galeria de fotos'] : [];
-  const answers = site.answers ? Object.values(site.answers).filter(Boolean) : [];
+  const answers = answerSummary(view.questions, site.answers);
+  const correction = site.answers?.[CORRECTION_KEY];
   const enough = editCost === undefined || balance >= editCost;
 
   return (
@@ -308,7 +311,8 @@ function Chat({
             ))}
           </div>
         )}
-        {answers.length > 0 && site.status !== 'questions' && <div className={s.userMsg}>{answers.join(' · ')}</div>}
+        {site.status !== 'questions' && answers.length > 0 && <div className={s.userMsg}>{answers.join(' · ')}</div>}
+        {site.status !== 'questions' && correction && <div className={s.userMsg}>Correcção: {correction}</div>}
 
         {view.messages.map((m, k) => (
           <MessageView
@@ -322,26 +326,18 @@ function Chat({
           />
         ))}
 
-        {site.status === 'questions' && view.questions && view.questions.length > 0 && !view.busy && (
+        {site.status === 'questions' && !view.busy && (
           <Questions
             key={view.messages.length}
-            questions={view.questions}
+            questions={view.questions ?? []}
+            understood={view.understood}
+            initial={storedToValues(view.questions ?? [], site.answers)}
+            initialCorrection={correction ?? ''}
             busy={answering}
-            onDone={(a) => onAnswer(a)}
-            onSkipAll={() => onAnswer({}, true)}
+            onDone={(a, c) => onAnswer(a, false, c)}
+            onSkipAll={(c) => onAnswer({}, true, c)}
             footnote={firstPage ? `Construir gasta ${credits(firstPage)}. Tens ${credits(balance)}.` : undefined}
           />
-        )}
-        {site.status === 'questions' && (!view.questions || view.questions.length === 0) && !view.busy && (
-          <div className={s.aiBlock}>
-            <FazLabel />
-            <p>Já tenho o que preciso para começar.</p>
-            <div>
-              <Button size="sm" loading={answering} onClick={() => onAnswer({}, true)}>
-                Construir site
-              </Button>
-            </div>
-          </div>
         )}
 
         {site.status === 'ready' && site.current_version > 0 && !view.busy && (

@@ -77,13 +77,25 @@ await page.waitForURL('**/novo');
 step('business');
 await page.getByLabel('Nome do negócio').fill(business);
 await page.locator('label', { hasText: 'Loja' }).click();
+// A photo goes with the request, so the questions are written with it in view.
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAwCAIAAAAuKetIAAAAV0lEQVR4Xu3RAQkAIQAEQTXNh7WYreRTLMJMgjt2nv2Nl62Xx/8cqClQU6CmQE2BmgI1BWoK1BSoKVBToKZATYGaAjUFagrUFKgpUFOgpkBNgZoCNQVqF8nLAd3SxgQbAAAAAElFTkSuQmCC',
+  'base64',
+);
+await page.locator('input[type=file]').setInputFiles({ name: 'frascos de mel.png', mimeType: 'image/png', buffer: png });
+await page.getByText('1 foto').waitFor();
 await shot(page, 'business');
 await page.getByRole('button', { name: 'Construir o meu site' }).click();
 await page.waitForURL('**/sites/*', { timeout: 30_000 });
 
 step('questions');
 await page.getByText('Pergunta 1 de 3').waitFor();
+await page.getByText('O que percebi').waitFor();
+await page.getByLabel('Fotos enviadas').getByText(/frascos-de-mel/).waitFor();
 await shot(page, 'questions');
+await page.getByRole('button', { name: 'Corrigir' }).click();
+await page.getByLabel(/O que está errado/).fill('Vendemos também a lojas e revendedores, não só a famílias.');
+await shot(page, 'questions-correction');
 await page.locator('textarea[aria-labelledby="q-entrega"]').fill('50 MT em Maputo e na Matola');
 await page.getByRole('button', { name: 'Continuar' }).click();
 await page.getByRole('radio', { name: /Sim|sim/ }).first().click();
@@ -96,6 +108,7 @@ step('build');
 await page.getByRole('status').filter({ hasText: /A construir|Na fila/ }).first().waitFor({ timeout: 15_000 });
 await shot(page, 'building');
 await page.getByText(/^Pronto\./).waitFor({ timeout: 120_000 });
+await page.getByText('Correcção: Vendemos também a lojas e revendedores, não só a famílias.').waitFor();
 const frame = page.frameLocator('iframe[title^="Pré-visualização"]');
 await frame.locator('body').waitFor({ timeout: 30_000 });
 await page.waitForTimeout(800);

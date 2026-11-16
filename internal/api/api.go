@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -82,16 +83,27 @@ func (s *Server) Handler() http.Handler {
 		s.respond(w, r, http.StatusOK, c, err)
 	})
 
+	// JSON, or multipart with the same fields plus up to 8 "file" photos, so
+	// the questions are written with the photos in view.
 	authed("POST /v1/sites", func(w http.ResponseWriter, r *http.Request, u store.User) {
-		var in struct {
-			Prompt       string `json:"prompt"`
-			BusinessName string `json:"business_name"`
-			BusinessType string `json:"business_type"`
+		var in product.NewSite
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			var ok bool
+			if in, ok = s.newSiteForm(w, r); !ok {
+				return
+			}
+		} else {
+			var body struct {
+				Prompt       string `json:"prompt"`
+				BusinessName string `json:"business_name"`
+				BusinessType string `json:"business_type"`
+			}
+			if !s.decode(w, r, &body) {
+				return
+			}
+			in = product.NewSite{Prompt: body.Prompt, BusinessName: body.BusinessName, BusinessType: body.BusinessType}
 		}
-		if !s.decode(w, r, &in) {
-			return
-		}
-		v, err := s.Svc.CreateSite(r.Context(), u, in.Prompt, in.BusinessName, in.BusinessType)
+		v, err := s.Svc.CreateSite(r.Context(), u, in)
 		s.respond(w, r, http.StatusCreated, v, err)
 	})
 	authed("GET /v1/sites", func(w http.ResponseWriter, r *http.Request, u store.User) {
@@ -104,13 +116,14 @@ func (s *Server) Handler() http.Handler {
 	})
 	authed("POST /v1/sites/{id}/answers", func(w http.ResponseWriter, r *http.Request, u store.User) {
 		var in struct {
-			Answers map[string]string `json:"answers"`
-			Skip    bool              `json:"skip"`
+			Answers    map[string]string `json:"answers"`
+			Skip       bool              `json:"skip"`
+			Correction string            `json:"correction"`
 		}
 		if !s.decode(w, r, &in) {
 			return
 		}
-		id, err := s.Svc.Answer(r.Context(), u, r.PathValue("id"), in.Answers, in.Skip)
+		id, err := s.Svc.Answer(r.Context(), u, r.PathValue("id"), in.Answers, in.Skip, in.Correction)
 		s.respond(w, r, http.StatusAccepted, map[string]any{"job_id": id}, err)
 	})
 	authed("POST /v1/sites/{id}/messages", func(w http.ResponseWriter, r *http.Request, u store.User) {
@@ -234,6 +247,51 @@ func (s *Server) allowed(origin string) bool {
 		}
 	}
 	return false
+}
+
+// newSiteForm reads a multipart new site request: the text fields and the
+// "file" parts. Each photo may be up to 15 MB; the request up to 64 MB.
+func (s *Server) newSiteForm(w http.ResponseWriter, r *http.Request) (product.NewSite, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			s.fail(w, r, &product.Error{Status: http.StatusRequestEntityTooLarge, Code: "request_too_large", Message: "As fotos juntas passam de 64 MB. Envia menos agora e junta as outras depois."})
+		} else {
+			s.fail(w, r, &product.Error{Status: http.StatusBadRequest, Code: "invalid_form", Message: "O pedido não veio no formato esperado."})
+		}
+		return product.NewSite{}, false
+	}
+	defer r.MultipartForm.RemoveAll()
+	in := product.NewSite{
+		Prompt:       r.FormValue("prompt"),
+		BusinessName: r.FormValue("business_name"),
+		BusinessType: r.FormValue("business_type"),
+	}
+	files := r.MultipartForm.File["file"]
+	if len(files) > product.MaxNewSiteFiles {
+		s.fail(w, r, &product.Error{Status: http.StatusBadRequest, Code: "too_many_files", Message: fmt.Sprintf("Envia até %d fotos agora; podes juntar mais depois.", product.MaxNewSiteFiles)})
+		return product.NewSite{}, false
+	}
+	for _, fh := range files {
+		if fh.Size > 15<<20 {
+			s.fail(w, r, &product.Error{Status: http.StatusRequestEntityTooLarge, Code: "file_too_large", Message: "Envia imagens até 15 MB."})
+			return product.NewSite{}, false
+		}
+		f, err := fh.Open()
+		if err != nil {
+			s.fail(w, r, err)
+			return product.NewSite{}, false
+		}
+		data, err := io.ReadAll(io.LimitReader(f, 15<<20+1))
+		f.Close()
+		if err != nil {
+			s.fail(w, r, err)
+			return product.NewSite{}, false
+		}
+		in.Files = append(in.Files, product.Upload{Name: fh.Filename, Data: data})
+	}
+	return in, true
 }
 
 func (s *Server) decode(w http.ResponseWriter, r *http.Request, v any) bool {

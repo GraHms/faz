@@ -40,7 +40,7 @@ describe('Questions', () => {
     await user.click(screen.getByRole('button', { name: 'Continuar' }));
 
     await user.click(screen.getByRole('button', { name: 'Saltar' }));
-    expect(onDone).toHaveBeenCalledWith({ whatsapp: '841234567', fotos: 'nao' });
+    expect(onDone).toHaveBeenCalledWith({ whatsapp: '841234567', fotos: 'nao' }, '');
   });
 
   it('skips everything on request', async () => {
@@ -48,7 +48,39 @@ describe('Questions', () => {
     const onSkipAll = vi.fn();
     render(<Questions questions={questions} onDone={() => undefined} onSkipAll={onSkipAll} />);
     await user.click(screen.getByRole('button', { name: 'Prefiro saltar' }));
-    expect(onSkipAll).toHaveBeenCalled();
+    expect(onSkipAll).toHaveBeenCalledWith('');
+  });
+
+  it('shows what it understood and sends the correction', async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<Questions questions={questions.slice(1, 2)} understood="Percebi que é um site para a Mel da Ana." onDone={onDone} onSkipAll={() => undefined} />);
+    expect(screen.getByText('O que percebi')).toBeInTheDocument();
+    expect(screen.getByText('Percebi que é um site para a Mel da Ana.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Corrigir' }));
+    await user.type(screen.getByLabelText(/O que está errado/), 'Vendemos também a revendedores.');
+    await user.click(screen.getByRole('radio', { name: /Sim/ }));
+    await user.click(screen.getByRole('button', { name: 'Construir site' }));
+    expect(onDone).toHaveBeenCalledWith({ fotos: 'sim' }, 'Vendemos também a revendedores.');
+  });
+
+  it('offers to retry with the answers kept from a failed build', async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(
+      <Questions
+        questions={questions}
+        understood="Percebi."
+        initial={{ whatsapp: '841234567', fotos: 'sim' }}
+        initialCorrection="Só Maputo."
+        onDone={onDone}
+        onSkipAll={() => undefined}
+      />,
+    );
+    expect(screen.getByText(/Guardei as tuas respostas/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/O que está errado/)).toHaveValue('Só Maputo.');
+    await user.click(screen.getByRole('button', { name: 'Construir com estas respostas' }));
+    expect(onDone).toHaveBeenCalledWith({ whatsapp: '841234567', fotos: 'sim' }, 'Só Maputo.');
   });
 });
 

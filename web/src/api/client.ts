@@ -25,11 +25,12 @@ export interface Api {
   me(): Promise<Account>;
   credits(): Promise<Credits>;
 
-  createSite(input: { prompt: string; business_name: string; business_type: string }): Promise<SiteView>;
+  /** Photos go with the request so the questions are written with them in view. */
+  createSite(input: { prompt: string; business_name: string; business_type: string }, files?: File[]): Promise<SiteView>;
   sites(): Promise<Site[]>;
   site(id: string): Promise<SiteView>;
   uploadAsset(siteId: string, file: File): Promise<Asset>;
-  answer(siteId: string, answers: Record<string, string>, skip?: boolean): Promise<{ job_id: number }>;
+  answer(siteId: string, answers: Record<string, string>, skip?: boolean, correction?: string): Promise<{ job_id: number }>;
   sendMessage(siteId: string, text: string): Promise<MessageResult>;
   preview(siteId: string, version?: number): Promise<Preview>;
   availability(name: string, siteId?: string): Promise<Availability>;
@@ -131,7 +132,15 @@ export function createHttpApi(opts: HttpOptions): Api {
     me: () => request('GET', '/v1/me'),
     credits: () => request('GET', '/v1/credits'),
 
-    createSite: (input) => request('POST', '/v1/sites', input),
+    createSite: (input, files) => {
+      if (!files?.length) return request('POST', '/v1/sites', input);
+      const form = new FormData();
+      form.append('prompt', input.prompt);
+      form.append('business_name', input.business_name);
+      form.append('business_type', input.business_type);
+      for (const f of files) form.append('file', f, f.name);
+      return request('POST', '/v1/sites', form);
+    },
     sites: () => request<{ sites: Site[] }>('GET', '/v1/sites').then((r) => r.sites),
     site: (siteId) => request('GET', `/v1/sites/${id(siteId)}`),
     uploadAsset: (siteId, file) => {
@@ -139,7 +148,8 @@ export function createHttpApi(opts: HttpOptions): Api {
       form.append('file', file, file.name);
       return request('POST', `/v1/sites/${id(siteId)}/assets`, form);
     },
-    answer: (siteId, answers, skip = false) => request('POST', `/v1/sites/${id(siteId)}/answers`, { answers, skip }),
+    answer: (siteId, answers, skip = false, correction) =>
+      request('POST', `/v1/sites/${id(siteId)}/answers`, { answers, skip, correction: correction || undefined }),
     sendMessage: (siteId, text) => request('POST', `/v1/sites/${id(siteId)}/messages`, { text }),
     preview: (siteId, version) =>
       request('GET', `/v1/sites/${id(siteId)}/preview${version ? `?version=${version}` : ''}`),

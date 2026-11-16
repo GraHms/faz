@@ -42,6 +42,7 @@ It keeps the rules the screens depend on: the 19 credit gift, free questions, ch
 
 - **Auth:** bearer token in `localStorage` (`faz.token`). The API takes no cookies, so other sites cannot ride the session; a 401 signs the owner out.
 - **Errors:** the API's messages are written for owners, in Portuguese, so the app shows them as they come. Codes drive behaviour: `insufficient_credits` opens the top up modal with `needed`, `site_busy` explains the wait, field codes such as `email_taken` land on their field.
+- **Before the build:** photos go with `POST /v1/sites`, so the questions never ask for photos already sent. The questions card opens with "O que percebi", the intake's summary, and a "Corrigir" link; the correction travels with the answers. After a failed build the stored answers are turned back into form values, and "Construir com estas respostas" retries in one tap.
 - **Jobs:** the editor finds the running job from the newest message that carries a `job_id`, polls `GET /v1/jobs/{id}` every 1.5 seconds and shows its `progress`, which the backend records as each pipeline stage starts. The steps on screen are real stages, not a timer.
 - **Preview:** a presigned R2 URL in an iframe with `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms"` and no `allow-same-origin`, so a generated page never gets the app's origin or its token.
 - **Payments:** `POST /v1/payments`, then `GET /v1/payments/{id}` every 2 seconds until the wallet confirms or refuses.

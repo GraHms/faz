@@ -3,10 +3,12 @@
 // them: prices, free questions, charged edits, refunds, busy sites,
 // subdomain checks and wallet prefixes. It is not a test of the backend.
 //
-// Testing hooks: a phone number ending in 0000 makes a payment fail, and a
-// message containing "estraga" makes an edit fail and refund.
+// Testing hooks: a phone number ending in 0000 makes a payment fail, and
+// "estraga" in a chat message or in the correction to "O que percebi" makes
+// that edit or build fail and refund.
 
 import { ApiError, type Api } from './client';
+import { CORRECTION_KEY, MAX_NEW_SITE_FILES } from './types';
 import type {
   Account,
   Asset,
@@ -72,7 +74,7 @@ interface State {
   users: (User & { password: string })[];
   tokens: Record<string, string>;
   ledger: (LedgerEntry & { user_id: string })[];
-  sites: (Site & { user_id: string; questions: Question[]; accent: number })[];
+  sites: (Site & { user_id: string; questions: Question[]; understood: string; accent: number })[];
   messages: (Message & { site_id: string })[];
   versions: (Version & { site_id: string })[];
   assets: (Asset & { site_id: string })[];
@@ -176,7 +178,7 @@ export function createMockApi(opts: MockOptions): Api {
     s.messages.push(msg);
     return msg;
   }
-  const stripSite = ({ user_id: _u, questions: _q, accent: _a, ...site }: State['sites'][number]): Site => site;
+  const stripSite = ({ user_id: _u, questions: _q, understood: _d, accent: _a, ...site }: State['sites'][number]): Site => site;
   const strip = <T extends object>(o: T, ...keys: string[]) => {
     const c = { ...o } as Record<string, unknown>;
     for (const k of keys) delete c[k];
@@ -187,6 +189,7 @@ export function createMockApi(opts: MockOptions): Api {
     return {
       site: stripSite(site),
       questions: site.status === 'questions' ? site.questions : undefined,
+      understood: site.status === 'questions' ? site.understood : undefined,
       messages: s.messages.filter((m) => m.site_id === site.id).map((m) => strip(m, 'site_id') as Message),
       versions: s.versions.filter((v) => v.site_id === site.id).map((v) => strip(v, 'site_id') as Version),
       assets: s.assets.filter((a) => a.site_id === site.id).map((a) => strip(a, 'site_id') as Asset),
@@ -195,13 +198,13 @@ export function createMockApi(opts: MockOptions): Api {
     };
   }
 
-  function questionsFor(type: string): Question[] {
+  function questionsFor(type: string, hasPhotos: boolean): Question[] {
     const feel: Record<string, [string, string][]> = {
       Restaurante: [['mar', 'Fresco, como o mar ao fim da tarde'], ['rotulo', 'Clássico, como um rótulo antigo'], ['noite', 'Escuro e elegante, para jantares']],
       Salão: [['suave', 'Suave e calmo'], ['vivo', 'Vivo e cheio de cor'], ['luxo', 'Escuro e sofisticado']],
       Loja: [['tecido', 'Colorido, como os tecidos'], ['limpo', 'Limpo e simples'], ['feira', 'Animado, como uma feira']],
     };
-    return [
+    const qs: Question[] = [
       { id: 'whatsapp', text: 'Para que número de WhatsApp vão as mensagens dos clientes?', hint: 'Fica no botão principal do site.', kind: 'phone', options: null },
       {
         id: 'fotos',
@@ -222,6 +225,13 @@ export function createMockApi(opts: MockOptions): Api {
         options: (feel[type] ?? [['serio', 'Sério e de confiança'], ['proximo', 'Próximo e simpático'], ['ousado', 'Ousado e diferente']]).map(([value, label]) => ({ value, label })),
       },
     ];
+    // Like the intake prompt: never ask for photos that came with the request.
+    return hasPhotos ? qs.filter((q) => q.id !== 'fotos') : qs;
+  }
+
+  function understoodFor(name: string, type: string): string {
+    const what = type ? `${name} (${type.toLowerCase()})` : name;
+    return `Percebi que é um site para ${what}, pensado para clientes que te procuram pelo telemóvel. O principal é levar quem visita a falar contigo pelo WhatsApp.`;
   }
 
   /** Moves jobs and payments forward to the current time. */
@@ -258,6 +268,17 @@ export function createMockApi(opts: MockOptions): Api {
     const site = s.sites.find((x) => x.id === j.site_id);
     if (!site) {
       j.status = 'failed';
+      return;
+    }
+    if (j.kind === 'build' && site.answers?.[CORRECTION_KEY]?.toLowerCase().includes('estraga')) {
+      j.status = 'failed';
+      entry(j.user_id, j.credits, 'refund', 'Construção falhou', { job_id: j.id });
+      site.status = 'questions';
+      addMessage(site.id, {
+        role: 'assistant',
+        job_id: j.id,
+        text: 'Não consegui construir o site por um erro nosso. Os créditos foram devolvidos e as tuas respostas ficaram guardadas; carrega em Construir para tentar outra vez.',
+      });
       return;
     }
     if (j.kind === 'edit' && j.request?.toLowerCase().includes('estraga')) {
@@ -366,9 +387,14 @@ export function createMockApi(opts: MockOptions): Api {
         };
       }),
 
-    createSite: ({ prompt, business_name, business_type }) =>
+    createSite: ({ prompt, business_name, business_type }, files = []) =>
       run(() => {
         const u = user();
+        if (files.length > MAX_NEW_SITE_FILES) fail(400, 'too_many_files', `Envia até ${MAX_NEW_SITE_FILES} fotos agora; podes juntar mais depois.`);
+        for (const f of files) {
+          if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) fail(400, 'unsupported_image', 'Envia uma imagem JPEG, PNG ou WebP.');
+          if (f.size > 15 * 1024 * 1024) fail(413, 'file_too_large', 'Envia imagens até 15 MB.');
+        }
         prompt = prompt.trim();
         business_name = business_name.trim();
         if (prompt.length < 10 || prompt.length > 4000) fail(400, 'invalid_prompt', 'Descreve o site em 10 a 4000 caracteres.');
@@ -383,10 +409,14 @@ export function createMockApi(opts: MockOptions): Api {
           current_version: 0,
           created_at: iso(),
           updated_at: iso(),
-          questions: questionsFor(business_type),
+          questions: questionsFor(business_type, files.length > 0),
+          understood: understoodFor(business_name, business_type),
           accent: 0,
         };
         s.sites.push(site);
+        for (const f of files) {
+          s.assets.push({ site_id: site.id, name: f.name, media_type: f.type, size: f.size, created_at: iso() });
+        }
         return view(site);
       }),
 
@@ -404,7 +434,7 @@ export function createMockApi(opts: MockOptions): Api {
     uploadAsset: async (siteId, file) => {
       if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
         await wait();
-        fail(400, 'invalid_image', 'Envia uma imagem JPEG, PNG ou WebP.');
+        fail(400, 'unsupported_image', 'Envia uma imagem JPEG, PNG ou WebP.');
       }
       if (file.size > 15 * 1024 * 1024) {
         await wait();
@@ -419,8 +449,10 @@ export function createMockApi(opts: MockOptions): Api {
       });
     },
 
-    answer: (siteId, answers, skip = false) =>
+    answer: (siteId, answers, skip = false, correction) =>
       run(() => {
+        correction = correction?.trim();
+        if (correction && correction.length > 1000) fail(400, 'correction_too_long', 'Escreve a correcção em até 1000 caracteres.');
         const u = user();
         const site = siteOf(siteId, u.id);
         if (site.status !== 'questions') fail(409, 'not_waiting_for_answers', 'Este site já está a ser construído.');
@@ -452,6 +484,7 @@ export function createMockApi(opts: MockOptions): Api {
           s.jobs.pop();
           throw e;
         }
+        if (correction) labeled[CORRECTION_KEY] = correction;
         site.answers = labeled;
         site.status = 'building';
         addMessage(site.id, {

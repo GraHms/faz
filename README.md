@@ -86,8 +86,8 @@ One Go binary serves the API and runs the job workers; run several copies behind
 ### The customer flow
 
 1. **Sign up**: the account gets the signup gift (19 credits by default).
-2. **Describe the business** (`POST /v1/sites`): Haiku reads the request and returns up to three clarifying questions. Free.
-3. **Answer or skip** (`POST /v1/sites/{id}/answers`): the first page is charged and a build job is queued. The full pipeline runs; every output goes to R2 as version 1.
+2. **Describe the business** (`POST /v1/sites`, JSON, or multipart with up to 8 photos): Haiku reads the request and the photos and returns up to three clarifying questions, plus `understood`: two sentences saying what it understood (the business, who the page is for, what it must get visitors to do), which the owner can correct. It never asks for photos it was sent. Free.
+3. **Answer or skip** (`POST /v1/sites/{id}/answers`, with an optional `correction`): the first page is charged and a build job is queued. The build reads the answers and the correction next to what it corrects. The full pipeline runs; every output goes to R2 as version 1. If the build fails, the charge comes back and the answers stay stored, so a retry is one tap.
 4. **Chat** (`POST /v1/sites/{id}/messages`): Haiku classifies each message. Questions and vague requests get a free reply with quick options; clear edits are charged (5 credits, or 20 for structural changes) and queued. An edit that breaks the page gets one repair; if it is still broken, the old page stays and the credits come back.
 5. **Top up** (`POST /v1/payments`): M-Pesa (84, 85) or e-Mola (86, 87), at least 200 MZN, IVA included. The payment stays pending until the provider settles it, through `POST /v1/payments/callback/{provider}`.
 6. **Publish** (`POST /v1/sites/{id}/publish`): the current version is copied to `live/<subdomain>/index.html`, and the Worker serves it.
@@ -101,9 +101,9 @@ A build or edit that fails for good refunds its charge once, whatever retries ha
 | `POST /v1/auth/signup`, `POST /v1/auth/login` | none | Returns `{token, expires_at, account}` |
 | `POST /v1/auth/logout`, `GET /v1/me`, `GET /v1/credits` | bearer | Session, balance, ledger |
 | `GET /v1/pricing` | none | Current prices |
-| `POST /v1/sites`, `GET /v1/sites`, `GET /v1/sites/{id}` | bearer | Create (returns questions), list, editor view |
+| `POST /v1/sites`, `GET /v1/sites`, `GET /v1/sites/{id}` | bearer | Create (JSON or multipart with `file` photos; returns questions and `understood`), list, editor view |
 | `POST /v1/sites/{id}/assets` | bearer | Multipart `file`; JPEG, PNG or WebP, scaled to fit inline |
-| `POST /v1/sites/{id}/answers` | bearer | `{answers: {id: value}}` or `{skip: true}`; 202 with `job_id` |
+| `POST /v1/sites/{id}/answers` | bearer | `{answers: {id: value}}` or `{skip: true}`, plus an optional `correction`; 202 with `job_id` |
 | `POST /v1/sites/{id}/messages` | bearer | `{text}`; 200 with a free reply, or 202 with `job_id` when charged |
 | `GET /v1/sites/{id}/preview` | bearer | Presigned R2 URL for an iframe, 15 minutes |
 | `GET /v1/subdomains/{name}` | bearer | Availability and the reason when not |

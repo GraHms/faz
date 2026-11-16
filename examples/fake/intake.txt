@@ -5,6 +5,7 @@
   "subject": "Cooperativa Apícola de Lichinga, 40 apicultores do Niassa que vendem mel cru em Maputo e na Matola.",
   "audience": "Clientes em Maputo e na Matola que recebem a ligação pelo WhatsApp ou pelo Instagram.",
   "page_job": "Levar o visitante a encomendar mel pelo WhatsApp.",
+  "understood": "Percebi que é um site para a Cooperativa Apícola de Lichinga vender mel cru do Niassa a famílias de Maputo e da Matola. O principal é levar quem visita a encomendar pelo WhatsApp.",
   "primary_action": {"label": "Encomendas só pelo WhatsApp", "target": "https://wa.me/258840000000"},
   "provided_facts": [
     {"key": "nome", "value": "Cooperativa Apícola de Lichinga"},

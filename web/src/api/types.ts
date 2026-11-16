@@ -57,6 +57,7 @@ export interface Site {
   business_type: string;
   prompt: string;
   status: SiteStatus;
+  /** Stored answers as labels (choices), +258 numbers (phones) or text, plus CORRECTION_KEY. Kept after a failed build. */
   answers?: Record<string, string>;
   current_version: number;
   published_version?: number;
@@ -108,9 +109,17 @@ export interface Asset {
   created_at: ISODate;
 }
 
+/** Key, among a site's stored answers, of the owner's correction to `understood`. */
+export const CORRECTION_KEY = '_correction';
+
+/** Photos that may come with a new site (product.MaxNewSiteFiles). */
+export const MAX_NEW_SITE_FILES = 8;
+
 export interface SiteView {
   site: Site;
   questions?: Question[];
+  /** What the intake understood, shown with the questions so the owner can correct it. */
+  understood?: string;
   messages: Message[];
   versions: Version[];
   assets: Asset[];

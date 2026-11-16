@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { imageAccept, pickImages } from '../lib/draft';
+import { MAX_NEW_SITE_FILES } from '../api/types';
 import { Dot, Spinner } from './ui';
 import s from './PromptCard.module.css';
 
@@ -97,7 +98,7 @@ export function PromptCard({
                 if (!e.target.files) return;
                 const { ok, rejected } = pickImages(e.target.files);
                 setFileError(rejected);
-                onFiles([...(files ?? []), ...ok].slice(0, 12));
+                onFiles([...(files ?? []), ...ok].slice(0, MAX_NEW_SITE_FILES));
                 e.target.value = '';
               }}
             />

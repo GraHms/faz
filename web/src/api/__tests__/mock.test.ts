@@ -63,6 +63,24 @@ describe('mock API', () => {
     expect(after.messages.at(-1)?.text).toMatch(/créditos foram devolvidos/);
   });
 
+  it('reads photos sent with the site and keeps answers after a failed build', async () => {
+    const { api, signIn, advance } = setup();
+    signIn((await api.signup({ name: 'Rita', email: 'rita@example.com', password: 'segredo123' })).token);
+    const photo = new File([new Uint8Array(10)], 'salao.jpg', { type: 'image/jpeg' });
+    const v = await api.createSite({ prompt: 'Site para o meu salão na Matola', business_name: 'Nyeleti', business_type: 'Salão' }, [photo]);
+    expect(v.assets.map((a) => a.name)).toEqual(['salao.jpg']);
+    expect(v.questions?.map((q) => q.id)).not.toContain('fotos');
+    expect(v.understood).toMatch(/^Percebi que/);
+
+    await api.answer(v.site.id, { sentir: 'vivo' }, false, 'Isto estraga tudo');
+    advance(16);
+    const after = await api.site(v.site.id);
+    expect(after.site.status).toBe('questions');
+    expect(after.site.answers).toEqual({ sentir: 'Vivo e cheio de cor', _correction: 'Isto estraga tudo' });
+    expect(after.understood).toBeTruthy();
+    expect((await api.me()).balance).toBe(19);
+  });
+
   it('checks subdomains like the backend', async () => {
     const { api, signIn } = setup();
     signIn((await api.signup({ name: 'Rui', email: 'rui@example.com', password: 'segredo123' })).token);
