@@ -194,3 +194,108 @@ export interface Payment {
 export interface ApiErrorBody {
   error: { code: string; message: string; details?: Record<string, unknown> };
 }
+
+// ---- Telemetry (operators only, behind the admin key) ----
+// Mirrors internal/product/telemetry.go and internal/store/usage.go. Go
+// flattens embedded structs, so totals sit beside the other fields.
+
+export type Operation = 'questions' | 'build' | 'classify' | 'edit';
+
+export interface UsageTotals {
+  calls: number;
+  errors: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+}
+
+export interface Money {
+  usd_to_mzn: number;
+  cost_usd: number;
+  cost_mzn: number;
+  credits_charged: number;
+  credits_refunded: number;
+  credits_net: number;
+  /** As charged, IVA included. */
+  credits_mzn: number;
+  /** What the business keeps; gift credits are valued at list price too. */
+  credits_mzn_ex_vat: number;
+  margin_mzn: number;
+  margin_percent: number;
+}
+
+export interface StageTelemetry extends UsageTotals {
+  operation: Operation | '';
+  stage: string;
+  model: string;
+  effort: string;
+  retries: number;
+}
+
+export interface UsageCall {
+  id: number;
+  job_id?: number;
+  operation: Operation;
+  stage: string;
+  model: string;
+  effort: string;
+  attempt: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+  error?: string;
+  created_at: ISODate;
+}
+
+export interface SiteJobs {
+  builds: number;
+  edits: number;
+  failed: number;
+  avg_build_seconds: number;
+}
+
+export interface SiteTelemetry {
+  site: Site;
+  owner_email: string;
+  totals: UsageTotals;
+  money: Money;
+  jobs: SiteJobs;
+  by_operation: StageTelemetry[];
+  by_model: StageTelemetry[];
+  by_stage: StageTelemetry[];
+  calls: UsageCall[];
+}
+
+export interface UsageGroup extends UsageTotals {
+  operation: Operation;
+  stage: string;
+  model: string;
+}
+
+export interface OverviewSite extends UsageTotals {
+  site_id: string;
+  business_name: string;
+  owner_email: string;
+  status: SiteStatus;
+  current_version: number;
+  published_version?: number;
+  created_at: ISODate;
+  credits_charged: number;
+  credits_refunded: number;
+  money: Money;
+}
+
+export interface TelemetryOverview {
+  from: ISODate;
+  to: ISODate;
+  totals: UsageTotals;
+  money: Money;
+  by_stage: UsageGroup[];
+  sites: OverviewSite[];
+}

@@ -27,6 +27,8 @@ import type {
 } from './types';
 import { parsePhone, subdomainProblem, vatIncluded } from '../lib/format';
 import { renderSamplePage } from './samplePage';
+import { cost, groupByStage, groupCalls, money, plannedCalls, sumTotals } from './mockTelemetry';
+import type { Operation, OverviewSite, SiteTelemetry, TelemetryOverview, UsageCall } from './types';
 
 const pricing: Pricing = {
   mzn_per_credit: 1,
@@ -80,12 +82,13 @@ interface State {
   assets: (Asset & { site_id: string })[];
   jobs: MockJob[];
   payments: (Payment & { user_id: string; settles_at: number })[];
+  usage: (UsageCall & { site_id: string; user_id: string })[];
 }
 
 const KEY = 'faz.mock.v1';
 
 function empty(): State {
-  return { seq: 1, users: [], tokens: {}, ledger: [], sites: [], messages: [], versions: [], assets: [], jobs: [], payments: [] };
+  return { seq: 1, users: [], tokens: {}, ledger: [], sites: [], messages: [], versions: [], assets: [], jobs: [], payments: [], usage: [] };
 }
 
 export interface MockOptions {
@@ -108,7 +111,8 @@ export function createMockApi(opts: MockOptions): Api {
     if (!persist) return empty();
     try {
       const raw = localStorage.getItem(KEY);
-      return raw ? (JSON.parse(raw) as State) : empty();
+      // Older saved states lack newer collections; fill them in.
+      return raw ? { ...empty(), ...(JSON.parse(raw) as Partial<State>) } : empty();
     } catch {
       return empty();
     }
@@ -178,6 +182,34 @@ export function createMockApi(opts: MockOptions): Api {
     s.messages.push(msg);
     return msg;
   }
+  /** Records the model calls an operation would make, as fazd does in model_usage. */
+  function spend(siteId: string, userId: string, op: Operation, jobId?: number, failAt?: string) {
+    const photos = s.assets.filter((a) => a.site_id === siteId).length;
+    for (const c of plannedCalls(op, photos)) {
+      const error = c.stage === failAt ? 'simulated model outage' : undefined;
+      s.usage.push({
+        id: nextId(),
+        site_id: siteId,
+        user_id: userId,
+        job_id: jobId,
+        operation: op,
+        stage: c.stage,
+        model: c.model,
+        effort: c.effort,
+        attempt: 1,
+        input_tokens: error ? 0 : c.input,
+        output_tokens: error ? 0 : c.output,
+        cache_read_tokens: error ? 0 : (c.cacheRead ?? 0),
+        cache_write_tokens: 0,
+        cost_usd: error ? 0 : cost(c.model, { input: c.input, output: c.output, cacheRead: c.cacheRead }),
+        latency_ms: c.latency,
+        error,
+        created_at: iso(),
+      });
+      if (error) return;
+    }
+  }
+
   const stripSite = ({ user_id: _u, questions: _q, understood: _d, accent: _a, ...site }: State['sites'][number]): Site => site;
   const strip = <T extends object>(o: T, ...keys: string[]) => {
     const c = { ...o } as Record<string, unknown>;
@@ -271,6 +303,7 @@ export function createMockApi(opts: MockOptions): Api {
       return;
     }
     if (j.kind === 'build' && site.answers?.[CORRECTION_KEY]?.toLowerCase().includes('estraga')) {
+      spend(site.id, j.user_id, 'build', j.id, 'build');
       j.status = 'failed';
       entry(j.user_id, j.credits, 'refund', 'Construção falhou', { job_id: j.id });
       site.status = 'questions';
@@ -281,6 +314,7 @@ export function createMockApi(opts: MockOptions): Api {
       });
       return;
     }
+    spend(site.id, j.user_id, j.kind === 'edit' ? 'edit' : 'build', j.id);
     if (j.kind === 'edit' && j.request?.toLowerCase().includes('estraga')) {
       j.status = 'failed';
       j.result = { rejected: true, reason: 'a alteração partia a página' };
@@ -417,6 +451,7 @@ export function createMockApi(opts: MockOptions): Api {
         for (const f of files) {
           s.assets.push({ site_id: site.id, name: f.name, media_type: f.type, size: f.size, created_at: iso() });
         }
+        spend(site.id, u.id, 'questions');
         return view(site);
       }),
 
@@ -505,6 +540,7 @@ export function createMockApi(opts: MockOptions): Api {
         if (site.current_version === 0 || site.status !== 'ready' || busy(site.id)) {
           fail(409, 'site_busy', 'Espera que o site termine a alteração em curso.');
         }
+        spend(site.id, u.id, 'classify');
         const c = classify(text);
         if (c.kind !== 'edit' && c.kind !== 'structural') {
           const um = addMessage(site.id, { role: 'user', text });
@@ -617,7 +653,99 @@ export function createMockApi(opts: MockOptions): Api {
         if (!p) fail(404, 'not_found', 'Não encontrado.');
         return strip(p, 'user_id', 'settles_at') as Payment;
       }),
+
+    // Any non-empty key opens the admin pages in the mock.
+    adminTelemetry: (key, period = {}) =>
+      run((): TelemetryOverview => {
+        adminKey(key);
+        const to = period.to ? Date.parse(period.to + 'T00:00:00Z') + 86400_000 : now() + 1;
+        const from = period.from ? Date.parse(period.from + 'T00:00:00Z') : to - 30 * 86400_000;
+        const inRange = (t: string) => Date.parse(t) >= from && Date.parse(t) < to;
+        const calls = s.usage.filter((c) => inRange(c.created_at)).map(publicCall);
+        const sites: OverviewSite[] = [];
+        for (const site of s.sites) {
+          const mine = s.usage.filter((c) => c.site_id === site.id && inRange(c.created_at)).map(publicCall);
+          if (!mine.length) continue;
+          const t = sumTotals(groupByStage(mine));
+          const [charged, refunded] = credits(site.id, inRange);
+          sites.push({
+            ...t,
+            site_id: site.id,
+            business_name: site.business_name,
+            owner_email: s.users.find((x) => x.id === site.user_id)?.email ?? '',
+            status: site.status,
+            current_version: site.current_version,
+            published_version: site.published_version,
+            created_at: site.created_at,
+            credits_charged: charged,
+            credits_refunded: refunded,
+            money: money(t.cost_usd, charged, refunded, pricing.mzn_per_credit),
+          });
+        }
+        sites.sort((a, b) => b.cost_usd - a.cost_usd);
+        const byStage = groupByStage(calls);
+        const totals = sumTotals(byStage);
+        const [charged, refunded] = credits(null, inRange);
+        return {
+          from: new Date(from).toISOString(),
+          to: new Date(to).toISOString(),
+          totals,
+          money: money(totals.cost_usd, charged, refunded, pricing.mzn_per_credit),
+          by_stage: byStage,
+          sites,
+        };
+      }),
+
+    adminSiteTelemetry: (key, siteId) =>
+      run((): SiteTelemetry => {
+        adminKey(key);
+        const site = s.sites.find((x) => x.id === siteId);
+        if (!site) fail(404, 'not_found', 'Não encontrado.');
+        const calls = s.usage.filter((c) => c.site_id === site.id).map(publicCall);
+        const g = groupCalls(calls);
+        const [charged, refunded] = credits(site.id, () => true);
+        const jobs = s.jobs.filter((j) => j.site_id === site.id);
+        const builds = jobs.filter((j) => j.kind === 'build' && j.status === 'succeeded');
+        return {
+          site: stripSite(site),
+          owner_email: s.users.find((x) => x.id === site.user_id)?.email ?? '',
+          totals: g.totals,
+          money: money(g.totals.cost_usd, charged, refunded, pricing.mzn_per_credit),
+          jobs: {
+            builds: jobs.filter((j) => j.kind === 'build').length,
+            edits: jobs.filter((j) => j.kind === 'edit').length,
+            failed: jobs.filter((j) => j.status === 'failed').length,
+            avg_build_seconds: builds.length ? Math.round(builds.reduce((n, j) => n + j.seconds, 0) / builds.length) : 0,
+          },
+          by_operation: g.byOperation,
+          by_model: g.byModel,
+          by_stage: g.byStage,
+          calls,
+        };
+      }),
   };
+
+  function adminKey(key: string) {
+    if (!key.trim()) fail(401, 'admin_unauthorized', 'Chave de administração errada.');
+  }
+
+  function publicCall(c: State['usage'][number]): UsageCall {
+    return strip(c, 'site_id', 'user_id') as UsageCall;
+  }
+
+  /** Credits charged and refunded for a site's jobs (all sites when siteId is null). */
+  function credits(siteId: string | null, inRange: (t: string) => boolean): [number, number] {
+    let charged = 0;
+    let refunded = 0;
+    for (const l of s.ledger) {
+      if (!l.job_id || !inRange(l.created_at)) continue;
+      const job = s.jobs.find((j) => j.id === l.job_id);
+      if (!job || (siteId && job.site_id !== siteId)) continue;
+      if (l.kind === 'charge') charged -= l.delta;
+      if (l.kind === 'refund') refunded += l.delta;
+    }
+    return [charged, refunded];
+  }
 }
 
 /** For tests and the "Limpar dados" button in mock mode. */

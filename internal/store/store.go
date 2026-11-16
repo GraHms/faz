@@ -580,6 +580,8 @@ func (s *Store) ActiveJob(ctx context.Context, q Q, siteID string) (bool, error)
 
 // ---- model usage ----
 
+// Usage is one model call: what it was for, which model, its tokens, cost
+// and timing. Failed calls are recorded too; they are paid for.
 type Usage struct {
 	UserID       string
 	SiteID       *string
@@ -587,18 +589,24 @@ type Usage struct {
 	Operation    string
 	Stage        string
 	Model        string
+	Effort       string
+	Attempt      int
 	InputTokens  int
 	OutputTokens int
 	CacheRead    int
 	CacheWrite   int
 	CostUSD      float64
+	LatencyMS    int
+	Error        *string
 }
 
 func (s *Store) AddUsage(ctx context.Context, q Q, us []Usage) error {
 	for _, u := range us {
-		if _, err := q.ExecContext(ctx, `INSERT INTO model_usage (user_id, site_id, job_id, operation, stage, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-			u.UserID, u.SiteID, u.JobID, u.Operation, u.Stage, u.Model, u.InputTokens, u.OutputTokens, u.CacheRead, u.CacheWrite, u.CostUSD); err != nil {
+		if _, err := q.ExecContext(ctx, `INSERT INTO model_usage (user_id, site_id, job_id, operation, stage, model, effort, attempt,
+			input_tokens, output_tokens, cache_read, cache_write, cost_usd, latency_ms, error)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+			u.UserID, u.SiteID, u.JobID, u.Operation, u.Stage, u.Model, u.Effort, u.Attempt,
+			u.InputTokens, u.OutputTokens, u.CacheRead, u.CacheWrite, u.CostUSD, u.LatencyMS, u.Error); err != nil {
 			return err
 		}
 	}

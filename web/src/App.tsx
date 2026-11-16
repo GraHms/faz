@@ -15,6 +15,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Editor = lazy(() => import('./pages/editor/Editor'));
 const Checkout = lazy(() => import('./pages/Checkout'));
 const NotFound = lazy(() => import('./pages/NotFound'));
+const AdminOverview = lazy(() => import('./pages/admin/Admin').then((m) => ({ default: m.AdminOverview })));
+const AdminSite = lazy(() => import('./pages/admin/Admin').then((m) => ({ default: m.AdminSite })));
 
 function Loading() {
   return (
@@ -56,6 +58,9 @@ export function AppRoutes() {
         <Route path="/painel" element={authed(<Dashboard />)} />
         <Route path="/sites/:id" element={authed(<Editor />)} />
         <Route path="/recarregar" element={authed(<Checkout />)} />
+        {/* Operators: guarded by the admin key, not by an owner session. */}
+        <Route path="/admin" element={<AdminOverview />} />
+        <Route path="/admin/sites/:id" element={<AdminSite />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

@@ -55,6 +55,10 @@ It keeps the rules the screens depend on: the 19 credit gift, free questions, ch
 
 These have no backend, so the app says so instead of pretending. Custom domains are shown wherever the prototype had them, marked with the shared `<Soon />` badge ("Em breve"): the pricing cell, the domains page, the publish dialog, "Ligar domínio" in the editor and the dashboard's Domínios tab, which lists the free addresses in use. Google sign in and password reset are not offered. The landing examples are labelled as starting points, not as customer sites.
 
+## Telemetry pages
+
+`/admin` and `/admin/sites/:id` show, for operators, what each site cost: tokens, cost per stage and model, credits charged and margin (see Telemetry in the root README). They ask for the admin key (fazd's `FAZ_ADMIN_TOKEN`), keep it in `sessionStorage` for the tab, and send it as `X-Faz-Admin`, never together with an owner's session. Nothing links to them from the owner screens. In mock mode any key works, and the mock records invented but plausible token counts for every operation.
+
 ## Checks
 
 ```sh
@@ -67,4 +71,4 @@ npm run build && npx vite preview --port 4173 &
 FAZ_WEB=http://127.0.0.1:4173 CHROME=/usr/bin/google-chrome npm run e2e
 ```
 
-The e2e script signs up, answers the questions, waits for the build, hits the 402, pays with the mock wallet, edits, publishes, checks the dashboard and payments, repeats key screens at phone size and signs out and in. It fails on any page error, console error or failed request from the app itself (requests made by the generated page inside the preview are its own). Screenshots land in `e2e/screenshots/`.
+The e2e script signs up, answers the questions, waits for the build, hits the 402, pays with the mock wallet, edits, publishes, checks the dashboard and payments, repeats key screens at phone size and signs out and in. It fails on any page error, console error or failed request from the app itself (requests made by the generated page inside the preview are its own). Screenshots land in `e2e/screenshots/`. With `FAZ_ADMIN_TOKEN` set, it also opens the telemetry pages, tries a wrong key, and checks the site page against the API.

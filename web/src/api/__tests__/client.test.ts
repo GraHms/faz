@@ -44,6 +44,17 @@ describe('createHttpApi', () => {
     await expect(api.pricing()).rejects.toMatchObject({ code: 'network', status: 0 });
   });
 
+  it('sends the admin key alone, never with a session', async () => {
+    const f = fakeFetch(200, { totals: {} });
+    const api = createHttpApi({ baseUrl: '', getToken: () => 'owner-token', fetch: f as unknown as typeof fetch });
+    await api.adminTelemetry('k3y', { from: '2026-11-01', to: '2026-11-15' });
+    const [url, init] = f.mock.calls[0]!;
+    expect(url).toBe('/v1/admin/telemetry?from=2026-11-01&to=2026-11-15');
+    const h = init?.headers as Record<string, string>;
+    expect(h['X-Faz-Admin']).toBe('k3y');
+    expect(h.Authorization).toBeUndefined();
+  });
+
   it('unwraps list envelopes', async () => {
     const f = fakeFetch(200, { sites: [{ id: 'a' }] });
     const api = createHttpApi({ baseUrl: '', getToken: () => 't', fetch: f as unknown as typeof fetch });

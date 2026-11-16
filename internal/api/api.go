@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,10 @@ type Server struct {
 	Svc        *product.Service
 	AppOrigins []string // allowed CORS origins for the web app
 	Log        *slog.Logger
+	// AdminToken unlocks /v1/admin, sent as X-Faz-Admin. Empty disables
+	// those routes. It is separate from user sessions: accounts have no
+	// verified emails, so no account can be trusted to be the operator.
+	AdminToken string
 }
 
 type ctxKey struct{}
@@ -43,6 +48,40 @@ func (s *Server) Handler() http.Handler {
 			h(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, u)), u)
 		})
 	}
+
+	admin := func(pattern string, h http.HandlerFunc) {
+		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+			if s.AdminToken == "" {
+				s.fail(w, r, &product.Error{Status: http.StatusNotFound, Code: "not_found", Message: "Não encontrado."})
+				return
+			}
+			got := r.Header.Get("X-Faz-Admin")
+			if subtle.ConstantTimeCompare([]byte(got), []byte(s.AdminToken)) != 1 {
+				s.fail(w, r, &product.Error{Status: http.StatusUnauthorized, Code: "admin_unauthorized", Message: "Chave de administração errada."})
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			h(w, r)
+		})
+	}
+
+	// Telemetry: tokens, cost per stage and model, and credits, per site
+	// and per period. ?from=2026-11-01&to=2026-11-30 (inclusive days, UTC);
+	// the default is the last 30 days.
+	admin("GET /v1/admin/telemetry", func(w http.ResponseWriter, r *http.Request) {
+		from, to, err := period(r)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, err := s.Svc.Telemetry(r.Context(), from, to, limit)
+		s.respond(w, r, http.StatusOK, v, err)
+	})
+	admin("GET /v1/admin/sites/{id}/telemetry", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Svc.SiteTelemetry(r.Context(), r.PathValue("id"))
+		s.respond(w, r, http.StatusOK, v, err)
+	})
 
 	open("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Svc.Store.DB.PingContext(r.Context()); err != nil {
@@ -225,7 +264,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		if origin := r.Header.Get("Origin"); origin != "" && s.allowed(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Faz-Admin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Max-Age", "600")
 			if r.Method == http.MethodOptions {
@@ -247,6 +286,32 @@ func (s *Server) allowed(origin string) bool {
 		}
 	}
 	return false
+}
+
+// period reads ?from and ?to as inclusive UTC days and returns [from, to).
+func period(r *http.Request) (time.Time, time.Time, error) {
+	now := time.Now().UTC()
+	to := now
+	from := now.AddDate(0, 0, -30)
+	bad := &product.Error{Status: http.StatusBadRequest, Code: "invalid_period", Message: "Usa datas no formato 2026-11-30."}
+	if v := r.URL.Query().Get("from"); v != "" {
+		d, err := time.Parse(time.DateOnly, v)
+		if err != nil {
+			return from, to, bad
+		}
+		from = d
+	}
+	if v := r.URL.Query().Get("to"); v != "" {
+		d, err := time.Parse(time.DateOnly, v)
+		if err != nil {
+			return from, to, bad
+		}
+		to = d.AddDate(0, 0, 1)
+	}
+	if !from.Before(to) {
+		return from, to, bad
+	}
+	return from, to, nil
 }
 
 // newSiteForm reads a multipart new site request: the text fields and the

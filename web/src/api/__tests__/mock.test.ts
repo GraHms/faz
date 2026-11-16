@@ -61,6 +61,18 @@ describe('mock API', () => {
     const after = await api.site(v.site.id);
     expect(after.site.status).toBe('ready');
     expect(after.messages.at(-1)?.text).toMatch(/créditos foram devolvidos/);
+    // Telemetry sees every model call, grouped, with credits beside it.
+    await expect(api.adminSiteTelemetry('', v.site.id)).rejects.toMatchObject({ code: 'admin_unauthorized' });
+    const t = await api.adminSiteTelemetry('chave', v.site.id);
+    expect(t.by_operation.map((o) => o.operation)).toEqual(['questions', 'build', 'classify', 'edit']);
+    expect(t.by_stage.filter((x) => x.operation === 'build').map((x) => x.stage)).toEqual(['intake', 'content', 'plan', 'critique', 'build', 'review']);
+    expect(t.totals.calls).toBe(t.calls.length);
+    expect(t.by_stage.reduce((n, x) => n + x.cost_usd, 0)).toBeCloseTo(t.totals.cost_usd, 6);
+    expect(t.money).toMatchObject({ credits_charged: 24, credits_refunded: 5, credits_net: 19 });
+    expect(t.jobs).toMatchObject({ builds: 1, edits: 1, failed: 1 });
+    const o = await api.adminTelemetry('chave');
+    expect(o.sites.map((x) => x.site_id)).toEqual([v.site.id]);
+    expect(o.totals.cost_usd).toBeCloseTo(t.totals.cost_usd, 6);
   });
 
   it('reads photos sent with the site and keeps answers after a failed build', async () => {

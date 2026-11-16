@@ -42,6 +42,24 @@ func (f *failingBuild) Complete(ctx context.Context, r llm.Request) (llm.Respons
 	return f.Client.Complete(ctx, r)
 }
 
+const adminToken = "test-admin-token-0123456789"
+
+func (h *harness) admin(path, key string, out any) int {
+	req, _ := http.NewRequest("GET", h.srv.URL+path, nil)
+	if key != "" {
+		req.Header.Set("X-Faz-Admin", key)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if out != nil {
+		json.NewDecoder(resp.Body).Decode(out)
+	}
+	return resp.StatusCode
+}
+
 type harness struct {
 	t      *testing.T
 	srv    *httptest.Server
@@ -129,7 +147,7 @@ func setup(t *testing.T) *harness {
 		Pricing: product.DefaultPricing, Profile: pipeline.Profiles["quality"], ProfileName: "quality",
 		SitesDomain: "faz.co.mz", Chrome: chrome, PasswordIterations: 1000,
 	}}
-	srv := httptest.NewServer((&api.Server{Svc: svc}).Handler())
+	srv := httptest.NewServer((&api.Server{Svc: svc, AdminToken: adminToken}).Handler())
 	t.Cleanup(srv.Close)
 	return &harness{t: t, srv: srv, svc: svc, model: model,
 		worker: &jobs.Worker{DB: db.DB, ID: "test", Handlers: svc.Handlers(), OnFailed: svc.OnJobFailed}}
@@ -415,6 +433,70 @@ func TestProductEndToEnd(t *testing.T) {
 	cost, err := h.svc.Store.SiteCost(context.Background(), id)
 	if err != nil || cost <= 0 {
 		t.Fatalf("site cost %v %v", cost, err)
+	}
+
+	// Telemetry: per site and per period, only with the admin key.
+	if code := h.admin("/v1/admin/sites/"+id+"/telemetry", "", nil); code != 401 {
+		t.Fatalf("telemetry without the admin key: %d", code)
+	}
+	if code := h.admin("/v1/admin/sites/"+id+"/telemetry", "wrong", nil); code != 401 {
+		t.Fatalf("telemetry with a wrong key: %d", code)
+	}
+	if code := h.call("GET", "/v1/admin/sites/"+id+"/telemetry", tok, nil, nil); code != 401 {
+		t.Fatalf("a customer token is not an admin key: %d", code)
+	}
+	var tel product.SiteTelemetry
+	if code := h.admin("/v1/admin/sites/"+id+"/telemetry", adminToken, &tel); code != 200 {
+		t.Fatalf("telemetry: %d", code)
+	}
+	var rows int
+	h.svc.Store.DB.QueryRow(`SELECT COUNT(*) FROM model_usage WHERE site_id = $1`, id).Scan(&rows)
+	if tel.Totals.Calls != rows || len(tel.Calls) != rows || tel.OwnerEmail != "ana@exemplo.co.mz" {
+		t.Fatalf("telemetry calls %d (%d listed), rows %d, owner %q", tel.Totals.Calls, len(tel.Calls), rows, tel.OwnerEmail)
+	}
+	if d := tel.Totals.CostUSD - cost; d > 1e-6 || d < -1e-6 {
+		t.Fatalf("telemetry cost %f, ledger of usage %f", tel.Totals.CostUSD, cost)
+	}
+	seen := map[string]product.StageTelemetry{}
+	var stageSum float64
+	for _, st := range tel.ByStage {
+		seen[st.Operation+"/"+st.Stage] = st
+		stageSum += st.CostUSD
+		if st.Model == "" || st.Effort == "" || st.InputTokens <= 0 || st.OutputTokens <= 0 {
+			t.Errorf("stage without detail: %+v", st)
+		}
+	}
+	for _, want := range []string{"questions/intake", "build/intake", "build/content", "build/plan", "build/critique", "build/build", "classify/classify", "edit/edit"} {
+		if _, ok := seen[want]; !ok {
+			t.Errorf("telemetry is missing %s; has %v", want, seen)
+		}
+	}
+	if m := seen["questions/intake"].Model; m != pipeline.Sonnet {
+		t.Errorf("intake ran on %s", m)
+	}
+	if m := seen["build/plan"].Model; m != pipeline.Opus {
+		t.Errorf("plan ran on %s", m)
+	}
+	if d := stageSum - tel.Totals.CostUSD; d > 1e-6 || d < -1e-6 {
+		t.Errorf("stages add up to %f, total %f", stageSum, tel.Totals.CostUSD)
+	}
+	if tel.Money.CreditsCharged < 19 || tel.Money.CostMZN != float64(int64(tel.Totals.CostUSD*product.DefaultUSDToMZN*100+0.5))/100 {
+		t.Errorf("money %+v", tel.Money)
+	}
+	if tel.Jobs.Builds != 1 || tel.Jobs.Edits < 1 {
+		t.Errorf("jobs %+v", tel.Jobs)
+	}
+	var ov product.Overview
+	if code := h.admin("/v1/admin/telemetry", adminToken, &ov); code != 200 || len(ov.Sites) == 0 || ov.Totals.CostUSD < tel.Totals.CostUSD {
+		t.Fatalf("overview: %d %+v", code, ov.Totals)
+	}
+	if code := h.admin("/v1/admin/telemetry?from=2026-13-01", adminToken, nil); code != 400 {
+		t.Errorf("bad period: %d", code)
+	}
+	rec := httptest.NewRecorder()
+	(&api.Server{Svc: h.svc}).Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/v1/admin/telemetry", nil))
+	if rec.Code != 404 {
+		t.Errorf("admin routes must not exist without FAZ_ADMIN_TOKEN: %d", rec.Code)
 	}
 	var ledgerSum int
 	h.svc.Store.DB.QueryRow(`SELECT COALESCE(SUM(delta),0) FROM credit_ledger WHERE user_id = $1`, sess.Account.User.ID).Scan(&ledgerSum)

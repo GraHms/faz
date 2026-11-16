@@ -185,6 +185,36 @@ const editorUrl = await page.evaluate(async () => {
   return `/sites/${sites[0].id}`;
 });
 
+step('telemetry');
+const adminKey = process.env.FAZ_ADMIN_TOKEN;
+if (adminKey) {
+  await page.goto(BASE + '/admin');
+  expect401 = true; // a wrong key is refused with 401
+  await page.getByLabel('Chave de administração').fill('errada');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByText('Chave errada').waitFor();
+  expect401 = false;
+  await page.getByLabel('Chave de administração').fill(adminKey);
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('heading', { name: 'Por etapa e modelo' }).waitFor();
+  await shot(page, 'telemetry');
+  await page.getByRole('link', { name: business }).click();
+  await page.getByRole('heading', { name: 'Por etapa' }).waitFor();
+  // The page's numbers must match the API's for the same site.
+  const api = await page.evaluate(async ([key, path]) => {
+    const r = await fetch(`/v1/admin/sites/${path.split('/').pop()}/telemetry`, { headers: { 'X-Faz-Admin': key } });
+    return r.json();
+  }, [adminKey, new URL(page.url()).pathname]);
+  if (api.totals.calls < 8 || !api.by_stage.some((x) => x.operation === 'questions' && x.model === 'claude-sonnet-5-5')) {
+    problems.push(`telemetry: unexpected site totals ${JSON.stringify(api.totals)}`);
+  }
+  await page.getByText(String(api.totals.calls), { exact: true }).first().waitFor();
+  await shot(page, 'telemetry-site');
+  await page.screenshot({ path: join(OUT, `${String(++n).padStart(2, '0')}-telemetry-site-full.png`), fullPage: true });
+} else {
+  console.log('FAZ_ADMIN_TOKEN not set: telemetry screens skipped');
+}
+
 step('pricing and domains');
 await page.goto(BASE + '/precos');
 await page.getByText('Recarga mínima · 200 créditos').waitFor();

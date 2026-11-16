@@ -113,6 +113,8 @@ A build or edit that fails for good refunds its charge once, whatever retries ha
 | `GET /v1/jobs/{id}` | bearer | Poll a build or edit; `progress` names the stage it reached |
 | `POST /v1/payments`, `GET /v1/payments`, `GET /v1/payments/{id}` | bearer | `{amount_mzn, msisdn, nuit?}` |
 | `POST /v1/payments/callback/{provider}` | provider | Settlement webhook |
+| `GET /v1/admin/telemetry?from=&to=` | admin key | Spend in a period (inclusive UTC days, default the last 30): totals, by operation, stage and model, and per site |
+| `GET /v1/admin/sites/{id}/telemetry` | admin key | One site: every model call, grouped by operation, model and stage, with credits charged and margin |
 
 Errors are `{"error": {"code", "message", "details"}}` with messages in Portuguese, ready to show. `402 insufficient_credits` carries `needed` and `balance`, so the app can open the top up screen.
 
@@ -161,6 +163,8 @@ Migrations run on start. The web app: `cd web && npm install && npm run dev` (it
 | `FAZ_CHROME`, `FAZ_CHROME_FLAGS`, `FAZ_NO_RENDER` | found on PATH | Render checks |
 | `FAZ_PASSWORD_ITERATIONS` | 600000 | PBKDF2 iterations |
 | `FAZ_DATA_DIR` | temp dir | Where the design history file lives |
+| `FAZ_ADMIN_TOKEN` | unset | Unlocks `/v1/admin` (header `X-Faz-Admin`) and the web app's `/admin` pages. At least 24 random characters; unset turns the routes off |
+| `FAZ_USD_MZN` | `64` | Rate used to show model spend in meticais |
 
 ### Security choices
 
@@ -169,9 +173,25 @@ Migrations run on start. The web app: `cd web && npm install && npm run dev` (it
 - **Passwords** use PBKDF2 with SHA-256 at 600 000 iterations; sessions store only a SHA-256 of the token.
 - **Uploads** accept JPEG, PNG and WebP only. SVG is refused because it can carry scripts.
 
+### Telemetry
+
+Every model call is stored in `model_usage`, failed calls and retries included, because they are paid for: the site, the job, the operation (`questions`, `build`, `classify`, `edit`), the stage, the model, the effort, the attempt, input, output and cache tokens, the cost in dollars and the latency.
+
+The admin API and the web app's `/admin` pages read it back:
+
+- **Per period:** model cost in dollars and meticais, credits charged without IVA, margin, calls, errors and tokens. Then a table by operation, stage and model with each row's share of the cost, and the sites, costliest first.
+- **Per site:** the same totals, with builds, edits, failures and build time. Then the spend by operation, by model and by stage (effort, retries, errors, tokens, cost, average latency), and every call in order.
+
+Read these numbers with two caveats:
+
+- **Costs are estimates.** They are made at call time from the price table in `internal/llm/cost.go`, which still needs checking against the pricing page. A later price change does not rewrite history.
+- **Gift credits count at list price.** Credits are valued without IVA, signup gift included, so a site built only with gift credits shows the value given away, not money received.
+
+The admin key is separate from accounts on purpose. Emails are not verified, so no account can be trusted to be the operator.
+
 ### Measure margins before launch
 
-Every model call is stored in `model_usage` with its cost in dollars. Compare it with what each operation charges:
+The telemetry pages show this per site. In SQL, compare spend with what each operation charges:
 
 ```sql
 SELECT operation,

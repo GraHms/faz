@@ -12,7 +12,9 @@ import type {
   Published,
   Session,
   Site,
+  SiteTelemetry,
   SiteView,
+  TelemetryOverview,
 } from './types';
 
 /** Everything the app asks of fazd. The HTTP client and the mock both implement it. */
@@ -41,6 +43,10 @@ export interface Api {
   topUp(input: { amount_mzn: number; msisdn: string; nuit?: string }): Promise<Payment>;
   payments(): Promise<Payment[]>;
   payment(id: string): Promise<Payment>;
+
+  /** Operators only: needs the admin key (FAZ_ADMIN_TOKEN), not a session. Days are inclusive, UTC. */
+  adminTelemetry(key: string, period?: { from?: string; to?: string }): Promise<TelemetryOverview>;
+  adminSiteTelemetry(key: string, siteId: string): Promise<SiteTelemetry>;
 }
 
 /** An error the API returned, with its machine readable code. */
@@ -80,10 +86,12 @@ export function createHttpApi(opts: HttpOptions): Api {
   const doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis);
   const base = opts.baseUrl.replace(/\/+$/, '');
 
-  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async function request<T>(method: string, path: string, body?: unknown, adminKey?: string): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
-    const token = opts.getToken();
+    // The admin key never travels with a user session, and vice versa.
+    const token = adminKey ? null : opts.getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
+    if (adminKey) headers['X-Faz-Admin'] = adminKey;
     let payload: BodyInit | undefined;
     if (body instanceof FormData) {
       payload = body;
@@ -162,5 +170,14 @@ export function createHttpApi(opts: HttpOptions): Api {
     topUp: (input) => request('POST', '/v1/payments', input),
     payments: () => request<{ payments: Payment[] }>('GET', '/v1/payments').then((r) => r.payments),
     payment: (paymentId) => request('GET', `/v1/payments/${id(paymentId)}`),
+
+    adminTelemetry: (key, period = {}) => {
+      const q = new URLSearchParams();
+      if (period.from) q.set('from', period.from);
+      if (period.to) q.set('to', period.to);
+      const qs = q.toString();
+      return request('GET', `/v1/admin/telemetry${qs ? `?${qs}` : ''}`, undefined, key);
+    },
+    adminSiteTelemetry: (key, siteId) => request('GET', `/v1/admin/sites/${id(siteId)}/telemetry`, undefined, key),
   };
 }
