@@ -98,7 +98,7 @@ const MaxNewSiteFiles = 8
 
 // CreateSite reads the owner's request and its photos and returns the
 // clarifying questions with what was understood. Nothing is charged: this is
-// one small Haiku call.
+// one Sonnet call.
 func (s *Service) CreateSite(ctx context.Context, u store.User, in NewSite) (*SiteView, error) {
 	prompt, businessName, businessType := clean(in.Prompt), clean(in.BusinessName), clean(in.BusinessType)
 	switch {

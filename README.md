@@ -9,7 +9,7 @@ The pipeline turns a client's brief into a verified, single file web page. Seven
 
 ```
 brief.md ─▶ intake ─▶ content ─▶ plan ─▶ [plan checks] ─▶ critique ─▶ build
-             Haiku     Sonnet     Opus     contrast,        Opus        Sonnet
+             Sonnet    Sonnet     Opus     contrast,        Opus        Sonnet
                                            defaults,
                                            repeats
 build ─▶ [static checks + headless Chrome] ─▶ review ─▶ repair ─▶ [checks again] ─▶ index.html
@@ -50,7 +50,7 @@ Needs Go 1.24 and Chrome or Chromium on the machine for the render and review st
 
 | Stage | quality | economy |
 |---|---|---|
-| intake | Haiku 5.5, medium | Haiku 5.5, medium |
+| intake | Sonnet 5.5, medium | Sonnet 5.5, medium |
 | content | Sonnet 5.5, medium | Sonnet 5.5, medium |
 | plan | Opus 5.5, high | Sonnet 5.5, high |
 | critique | Opus 5.5, high | Sonnet 5.5, high |
@@ -59,6 +59,8 @@ Needs Go 1.24 and Chrome or Chromium on the machine for the render and review st
 | repair | Sonnet 5.5, medium | Sonnet 5.5, medium |
 | classify (product chat) | Haiku 5.5, low | Haiku 5.5, low |
 | edit (product chat) | Sonnet 5.5, low | Sonnet 5.5, low |
+
+Intake runs on Sonnet in both profiles, and twice per site in the product (the questions, then the build). It is not plain extraction: it reads the photos, picks the questions and writes the summary the owner confirms, so its mistakes reach every later stage. Classify stays on Haiku because every chat message waits on it and it only routes; check its charge decisions on real messages before launch.
 
 Run the same briefs through both before deciding what Opus is worth for your clients. Edit `internal/pipeline/profile.go` to add your own.
 
@@ -86,7 +88,7 @@ One Go binary serves the API and runs the job workers; run several copies behind
 ### The customer flow
 
 1. **Sign up**: the account gets the signup gift (19 credits by default).
-2. **Describe the business** (`POST /v1/sites`, JSON, or multipart with up to 8 photos): Haiku reads the request and the photos and returns up to three clarifying questions, plus `understood`: two sentences saying what it understood (the business, who the page is for, what it must get visitors to do), which the owner can correct. It never asks for photos it was sent. Free.
+2. **Describe the business** (`POST /v1/sites`, JSON, or multipart with up to 8 photos): Sonnet reads the request and the photos and returns up to three clarifying questions, plus `understood`: two sentences saying what it understood (the business, who the page is for, what it must get visitors to do), which the owner can correct. It never asks for photos it was sent. Free.
 3. **Answer or skip** (`POST /v1/sites/{id}/answers`, with an optional `correction`): the first page is charged and a build job is queued. The build reads the answers and the correction next to what it corrects. The full pipeline runs; every output goes to R2 as version 1. If the build fails, the charge comes back and the answers stay stored, so a retry is one tap.
 4. **Chat** (`POST /v1/sites/{id}/messages`): Haiku classifies each message. Questions and vague requests get a free reply with quick options; clear edits are charged (5 credits, or 20 for structural changes) and queued. An edit that breaks the page gets one repair; if it is still broken, the old page stays and the credits come back.
 5. **Top up** (`POST /v1/payments`): M-Pesa (84, 85) or e-Mola (86, 87), at least 200 MZN, IVA included. The payment stays pending until the provider settles it, through `POST /v1/payments/callback/{provider}`.

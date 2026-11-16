@@ -1,7 +1,7 @@
 // Package pipeline runs a brief through every stage, from intake to a
 // verified page, and writes each stage's output plus a report.
 //
-//	intake    Haiku   raw request  -> brief.json
+//	intake    Sonnet  raw request  -> brief.json
 //	content   Sonnet  brief        -> copy.json
 //	plan      Opus    brief, copy  -> plan.draft.json
 //	(checks)  Go      contrast, generic defaults, repeats of recent work
